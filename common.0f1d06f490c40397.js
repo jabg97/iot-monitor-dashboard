@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkiot_monitor_dashboard=self.webpackChunkiot_monitor_dashboard||[]).push([[592],{4466:(u,e,a)=>{a.d(e,{m:()=>d});var r=a(9808),_=a(5e3);let d=(()=>{class o{}return o.\u0275fac=function(t){return new(t||o)},o.\u0275mod=_.oAB({type:o}),o.\u0275inj=_.cJS({imports:[r.ez]}),o})()}}]);
