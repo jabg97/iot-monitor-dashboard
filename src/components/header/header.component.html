@@ -1,0 +1,23 @@
+<header>
+  <nav>
+    <ul>
+      <li>{{ title }}</li>
+      <li><a routerLink="/">Dashboard</a></li>
+      <li><a routerLink="/devices">Devices</a></li>
+      <li><a href="javascript:void(0)" (click)="aboutDialog.show()">About</a></li>
+    </ul>
+    <button class="user-btn" (click)="logOut()">{{ user }}</button>
+  </nav>
+</header>
+<dialog #aboutDialog>
+  <div class="dialog-header">
+    <h2>About</h2>
+    <button class="close-dialog" (click)="aboutDialog.close()">X</button>
+  </div>
+  <div class="dialog-body">
+    <p>This is an educational project to monitor crops through an IoT system deployed in Azure cloud.</p>
+    <p>This project was developed using Typescript, Azure Functions and Cosmo DB for backend programming and Typescript, Angular, SCSS and HTML for frontEnd programming.</p> 
+    <p>A variant of the C++ programming language was also used for the programming of the Arduino microcontroller.</p>
+    <p>All of this in order to obtain a degree in Informatic Engineering.</p>
+  </div>
+</dialog>
