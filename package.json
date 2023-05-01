@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-    "start": "ng serve",
+    "start": "ng serve -o --host 0.0.0.0",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"
@@ -18,6 +18,11 @@
     "@angular/platform-browser": "^15.2.0",
     "@angular/platform-browser-dynamic": "^15.2.0",
     "@angular/router": "^15.2.0",
+    "@auth0/auth0-angular": "^2.0.2",
+    "@syncfusion/ej2-angular-circulargauge": "^21.1.38",
+    "@zxing/browser": "^0.1.1",
+    "@zxing/library": "^0.19.2",
+    "@zxing/ngx-scanner": "^3.8.1",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
     "zone.js": "~0.12.0"

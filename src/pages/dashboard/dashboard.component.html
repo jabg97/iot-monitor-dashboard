@@ -1,0 +1,68 @@
+
+<div class="row" *ngIf="!devices.length">
+    <div class="col-12">
+        <h3 class="error-text centered-text">
+            We can't find devices linked to your account.
+        </h3>
+    </div>
+</div>
+<div *ngIf="devices.length">
+    <div class="row" *ngFor="let device of devices">
+        <div class="col-12">
+            <h3 class="centered-text">
+                {{ device.name ?? 'Unknown Device' }}
+            </h3> 
+        </div>
+        <div class="col-12 col-sm-6 col-lg-4">
+            <h5 class="warning-text centered-text" *ngIf="!device.range?.minAirTemperature || !device.range?.maxAirTemperature">
+                Please configure the air temperature range.
+            </h5>
+            <ejs-circulargauge style='display:block;' background='transparent' (load)='load($event)' *ngIf="device.range?.minAirTemperature && device.range?.maxAirTemperature">
+                <e-axes>
+                    <e-axis radius='80%' startAngle=230 endAngle=130 [majorTicks]='ticks' [minorTicks]='ticks'
+                        [lineStyle]="" [labelStyle]="labelStyle" minimum={{device.range?.minAirTemperature}}  maximum={{device.range?.maxAirTemperature}}>
+                        <e-pointers>
+                            <e-pointer value={{device.range?.minAirTemperature}} radius='60%' pointerWidth=7 color="#da677e" [animation]='animation' [cap]="cap"
+                                [needleTail]="tail">
+                            </e-pointer>
+                        </e-pointers>
+                    </e-axis>
+                </e-axes>
+            </ejs-circulargauge>
+        </div>
+        <div class="col-12 col-sm-6 col-lg-4">
+            <h5 class="warning-text centered-text" *ngIf="!device.range?.minHumidity || !device.range?.maxHumidity">
+                Please configure the humidity range.
+            </h5>
+            <ejs-circulargauge style='display:block;' background='transparent' (load)='load($event)' *ngIf="device.range?.minHumidity && device.range?.maxHumidity">
+                <e-axes>
+                    <e-axis radius='80%' startAngle=230 endAngle=130 [majorTicks]='ticks' [minorTicks]='ticks'
+                        [lineStyle]="" [labelStyle]="labelStyle" minimum={{device.range?.minHumidity}}  maximum={{device.range?.maxHumidity}}>
+                        <e-pointers>
+                            <e-pointer value={{device.range?.minHumidity}} radius='60%' pointerWidth=7 color="#da677e" [animation]='animation' [cap]="cap"
+                                [needleTail]="tail">
+                            </e-pointer>
+                        </e-pointers>
+                    </e-axis>
+                </e-axes>
+            </ejs-circulargauge>
+        </div>
+        <div class="col-12 col-sm-6 col-lg-4">
+            <h5 class="warning-text centered-text" *ngIf="!device.range?.minSoilMoisture || !device.range?.maxSoilMoisture">
+                Please configure the soil moisture range.
+            </h5>
+            <ejs-circulargauge style='display:block;' background='transparent' (load)='load($event)' *ngIf="device.range?.minSoilMoisture && device.range?.maxSoilMoisture">
+                <e-axes>
+                    <e-axis radius='80%' startAngle=230 endAngle=130 [majorTicks]='ticks' [minorTicks]='ticks'
+                        [lineStyle]="" [labelStyle]="labelStyle" minimum={{device.range?.minSoilMoisture}}  maximum={{device.range?.maxSoilMoisture}}>
+                        <e-pointers>
+                            <e-pointer value={{device.range?.minSoilMoisture}} radius='60%' pointerWidth=7 color="#da677e" [animation]='animation' [cap]="cap"
+                                [needleTail]="tail">
+                            </e-pointer>
+                        </e-pointers>
+                    </e-axis>
+                </e-axes>
+            </ejs-circulargauge>
+        </div>
+    </div>
+</div>

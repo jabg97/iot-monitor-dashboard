@@ -1,0 +1,55 @@
+:host zxing-scanner::ng-deep video {
+    max-height: 75vh;    
+    object-fit: contain;
+}
+:host zxing-scanner::ng-deep {
+    border-style: groove;
+    border-width: 5px;
+    border-color: hsl(var(--hs-interactive), var(--l-interactive));
+    width: 100%;
+} 
+
+.col-12{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+}
+.w-70{
+    width: 70%;
+}
+.w-100{
+    width: 100%;
+}
+.row{
+    .col-12{
+        padding: 20px;
+    }   
+}
+
+hr.w-70 + h2 + dialog + table{
+    width: 70%;
+    & > tbody > tr > td:nth-child(1){
+        max-width: 20em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    } 
+    overflow: hidden;
+    & > tbody > tr > td:nth-child(2){
+        display: flex;
+        gap: 10px;
+    }
+} 
+
+@media (max-width: 710px) {
+    hr.w-70 + h2 + dialog + table > tbody > tr > td:nth-child(1){
+        max-width: 12em;
+    } 
+  }
+
+  @media (max-width: 500px) {
+    hr.w-70 + h2 + dialog + table > tbody > tr > td:nth-child(1){
+        max-width: 10em;
+    } 
+  }
