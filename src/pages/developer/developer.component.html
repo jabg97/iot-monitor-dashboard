@@ -1,122 +1,27 @@
 <div class="row">
   <div class="col-12 col-lg-6">
-    <h2>Scan QR Code</h2>
-    <zxing-scanner
-      #scanner
-      *ngIf="scannerEnabled"
-      [formats]="allowedFormats"
-      (camerasFound)="cameraFound($event)"
-      (camerasNotFound)="camerasNotFound($event)"
-      (scanSuccess)="scanSuccessHandler($event)">
-    </zxing-scanner>
-    <button
-      (click)="enableScanner()"
-      *ngIf="!scannerEnabled"
-      class="btn-success">
-      Register another device
-    </button>
+    <h2>QR Code</h2>
+    <qrcode
+      (qrCodeURL)="onChangeURL($event)"
+      [qrdata]="qrCode"
+      *ngIf="qrCode"
+      [cssClass]="'qr-code'"
+      [width]="512"
+      [errorCorrectionLevel]="'H'"></qrcode>
+    <a *ngIf="qrUrl" [href]="qrUrl" download="qrcode">Download</a>
+    <p class="warning-text" *ngIf="!qrCode">
+      Please select a device to generate a QR code.
+    </p>
+    <hr class="w-70" />
+    <h2>Information</h2>
+    <p [ngClass]="[infoType]">{{ information }}</p>   
   </div>
   <div class="col-12 col-lg-6">
-    <h2>Scanner Result</h2>
-    <p [ngClass]="[infoType]">{{ information }}</p>
-    <hr class="w-70" />
-    <h2>Your Devices</h2>
-    <dialog #editDialog>
-      <div class="dialog-header">
-        <h2>{{ deviceForm.controls.name.value }}</h2>
-        <button class="close-dialog" (click)="editDialog.close()">X</button>
-      </div>
-      <div class="dialog-body">
-        <form
-          [formGroup]="deviceForm"
-          (ngSubmit)="deviceForm.valid && onSubmit()">
-          <label for="id">Id</label>
-          <input type="text" id="id" formControlName="id" readonly />
-          <label for="name">Name</label>
-          <input
-            type="text"
-            id="name"
-            formControlName="name"
-            placeholder="Device name"
-            required />
-          <label for="crop">Crop</label>
-          <select
-            id="crop"
-            formControlName="cropId"
-            (change)="onChange($event)">
-            <option value="">Custom</option>
-            <option *ngFor="let crop of crops" value="{{ crop.id }}">
-              {{ crop.name }}
-            </option>
-          </select>
-          <details formGroupName="range">
-            <summary>Climate range</summary>
-
-            <label for="minAirTemperature">Minimun air temperature (°C)</label>
-            <input
-              type="number"
-              id="minAirTemperature"
-              formControlName="minAirTemperature"
-              placeholder="Minimun air temperature"
-              [readOnly]="deviceForm.controls.cropId.value"
-              required />
-            <label for="maxAirTemperature">Maximun air temperature (°C)</label>
-            <input
-              type="number"
-              id="maxAirTemperature"
-              formControlName="maxAirTemperature"
-              placeholder="Maximun air temperature"
-              [readOnly]="deviceForm.controls.cropId.value"
-              required />
-
-            <hr class="w-100" />
-
-            <label for="minAirHumidity">Minimun air humidity (%)</label>
-            <input
-              type="number"
-              id="minAirHumidity"
-              formControlName="minAirHumidity"
-              placeholder="Minimun humidity"
-              [readOnly]="deviceForm.controls.cropId.value"
-              required />
-            <label for="maxAirHumidity">Maximun air humidity (%)</label>
-            <input
-              type="number"
-              id="maxAirHumidity"
-              formControlName="maxAirHumidity"
-              placeholder="Maximun humidity"
-              [readOnly]="deviceForm.controls.cropId.value"
-              required />
-
-            <hr class="w-100" />
-
-            <label for="minSoilMoisture">Minimun soil moisture (%)</label>
-            <input
-              type="number"
-              id="minSoilMoisture"
-              formControlName="minSoilMoisture"
-              placeholder="Minimun soil moisture"
-              [readOnly]="deviceForm.controls.cropId.value"
-              required />
-            <label for="maxSoilMoisture">Maximun soil moisture (%)</label>
-            <input
-              type="number"
-              id="maxSoilMoisture"
-              formControlName="maxSoilMoisture"
-              placeholder="Maximun soil moisture"
-              [readOnly]="deviceForm.controls.cropId.value"
-              required />
-          </details>
-          <div class="form-buttons">
-            <button class="btn-success">Save</button>
-            <button class="btn-error" (click)="editDialog.close()">
-              Cancel
-            </button>
-          </div>
-        </form>
-      </div>
-    </dialog>
-    <table *ngIf="devices.length">
+    <h2>Unlinked devices</h2>
+    <button (click)="registerDevice()" class="btn-success">
+      Register device
+    </button>
+    <table *ngIf="crops.length">
       <caption>
         {{
           devices.length | count : 'unlinked device' : 'unlinked devices'
@@ -130,20 +35,128 @@
       </thead>
       <tbody>
         <tr *ngFor="let device of devices">
-          <td>{{ device.name ?? 'Unknown Device' }}</td>
+          <td>{{ device.name }}</td>
           <td>
-            <button
-              class="btn-warning"
-              (click)="edit(device); editDialog.show()">
-              Edit
-            </button>
-            <button class="btn-error" (click)="unlink(device)">Unlink</button>
+            <button (click)="generateQR(device.id)">QR</button>
           </td>
         </tr>
       </tbody>
     </table>
-    <p class="error-text" *ngIf="!devices.length">
-      We can't find devices linked to your account.
+    <p class="error-text" *ngIf="!crops.length">
+      We can't find unlinked devices in the database.
+    </p>
+    <hr class="w-70" />
+    <h2>Your Crops</h2>
+    <button (click)="form(); formDialog.show()" class="btn-success">
+      Register crop
+    </button>
+    <dialog #formDialog>
+      <div class="dialog-header">
+        <h2>{{ cropForm.controls.name.value }}</h2>
+        <button class="close-dialog" (click)="formDialog.close()">X</button>
+      </div>
+      <div class="dialog-body">
+        <form [formGroup]="cropForm" (ngSubmit)="cropForm.valid && onSubmit()">
+          <label for="id">Id</label>
+          <input
+            type="text"
+            id="id"
+            formControlName="id"
+            placeholder="Generated automatically"
+            readonly />
+          <label for="name">Name</label>
+          <input
+            type="text"
+            id="name"
+            formControlName="name"
+            placeholder="Device name"
+            required />
+          <details formGroupName="range">
+            <summary>Climate range</summary>
+
+            <label for="minAirTemperature">Minimun air temperature (°C)</label>
+            <input
+              type="number"
+              id="minAirTemperature"
+              formControlName="minAirTemperature"
+              placeholder="Minimun air temperature"
+              required />
+            <label for="maxAirTemperature">Maximun air temperature (°C)</label>
+            <input
+              type="number"
+              id="maxAirTemperature"
+              formControlName="maxAirTemperature"
+              placeholder="Maximun air temperature"
+              required />
+
+            <hr class="w-100" />
+
+            <label for="minAirHumidity">Minimun air humidity (%)</label>
+            <input
+              type="number"
+              id="minAirHumidity"
+              formControlName="minAirHumidity"
+              placeholder="Minimun humidity"
+              required />
+            <label for="maxAirHumidity">Maximun air humidity (%)</label>
+            <input
+              type="number"
+              id="maxAirHumidity"
+              formControlName="maxAirHumidity"
+              placeholder="Maximun humidity"
+              required />
+
+            <hr class="w-100" />
+
+            <label for="minSoilMoisture">Minimun soil moisture (%)</label>
+            <input
+              type="number"
+              id="minSoilMoisture"
+              formControlName="minSoilMoisture"
+              placeholder="Minimun soil moisture"
+              required />
+            <label for="maxSoilMoisture">Maximun soil moisture (%)</label>
+            <input
+              type="number"
+              id="maxSoilMoisture"
+              formControlName="maxSoilMoisture"
+              placeholder="Maximun soil moisture"
+              required />
+          </details>
+          <div class="form-buttons">
+            <button class="btn-success">Save</button>
+            <button class="btn-error" (click)="formDialog.close()">
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </dialog>
+    <table *ngIf="crops.length">
+      <caption>
+        {{
+          crops.length | count : 'registered crop' : 'registered crops'
+        }}
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let crop of crops">
+          <td>{{ crop.name }}</td>
+          <td>
+            <button class="btn-warning" (click)="form(crop); formDialog.show()">
+              Edit
+            </button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="error-text" *ngIf="!crops.length">
+      We can't find crops registered in the database.
     </p>
   </div>
 </div>

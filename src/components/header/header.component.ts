@@ -1,20 +1,19 @@
-import { Component, Input} from '@angular/core';
+import { Component, Input } from '@angular/core';
+import { Router } from '@angular/router';
 
 @Component({
   selector: 'app-header',
   templateUrl: './header.component.html',
-  styleUrls: ['./header.component.scss']
+  styleUrls: ['./header.component.scss'],
 })
-export class HeaderComponent{
-  
-  title:string = 'IoT Monitor';
+export class HeaderComponent {
+  title = 'IoT Monitor';
 
-  @Input () user:string = ""; 
+  @Input() user = '';
 
-  constructor() {
-  }
-  
-  logOut(){
-    alert("test")
+  constructor(public router: Router) {}
+
+  logOut() {
+    alert('test');
   }
 }

@@ -16,10 +16,19 @@ import { DashboardComponent } from 'src/pages/dashboard/dashboard.component';
 import { NotFoundComponent } from 'src/pages/not-found/not-found.component';
 import { HeaderComponent } from 'src/components/header/header.component';
 import { CircularGaugeModule } from '@syncfusion/ej2-angular-circulargauge';
+import { DeveloperComponent } from 'src/pages/developer/developer.component';
+import { CountPipe } from '../pipes/count/count.pipe';
+import { QRCodeModule } from 'angularx-qrcode';
 
 @NgModule({
   declarations: [
-    AppComponent, DevicesComponent, DashboardComponent, NotFoundComponent, HeaderComponent
+    AppComponent,
+    DevicesComponent,
+    DeveloperComponent,
+    DashboardComponent,
+    NotFoundComponent,
+    HeaderComponent,
+    CountPipe,
   ],
   imports: [
     BrowserModule,
@@ -28,15 +37,16 @@ import { CircularGaugeModule } from '@syncfusion/ej2-angular-circulargauge';
     HttpClientModule,
     ReactiveFormsModule,
     CircularGaugeModule,
+    QRCodeModule,
     AuthModule.forRoot({
       domain: environment.auth0domain,
       clientId: environment.auth0client,
       authorizationParams: {
         redirect_uri: window.location.origin,
       },
-    })
+    }),
   ],
   providers: [],
-  bootstrap: [AppComponent]
+  bootstrap: [AppComponent],
 })
-export class AppModule { }
+export class AppModule {}

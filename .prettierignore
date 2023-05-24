@@ -1,0 +1,11 @@
+package.json
+package-lock.json
+.angular
+.vscode
+.git
+.github
+dist
+build
+coverage
+e2e
+node_modules
