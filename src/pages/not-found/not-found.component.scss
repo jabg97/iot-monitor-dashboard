@@ -1,69 +1,66 @@
-  
-  html {
-    font-size:24px;
-    box-sizing: border-box;
-    
-    @media screen and (max-width: 960px) {
-      font-size:18px;
-    }
-    
-    @media screen and (max-width: 640px) {
-      font-size:12px;
-    }
+html {
+  font-size: 24px;
+  box-sizing: border-box;
+
+  @media screen and (max-width: 960px) {
+    font-size: 18px;
   }
 
-  *, *:before, *:after {
-    box-sizing: inherit;
+  @media screen and (max-width: 640px) {
+    font-size: 12px;
   }
-  
-
-  .flex-full-justify{
-    width: 100%;
-    height: 100%;
-    margin: 0;
-  }
-  
-  
-  .container-404 {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;  
-    margin-top: 150px;
 }
 
-  
-  .flex-full-justify {
-    padding:3rem 4rem;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    
-    > .flex-inner {
-      max-width: 40rem;
-    }
-  }
-  
-  h2 {
-    background-color: silver;
-    color: #00a;
-    padding: 1rem 2rem;
-    display: inline-block;
-  }
+*,
+*:before,
+*:after {
+  box-sizing: inherit;
+}
 
-  h2, p{
-    text-align: center;
-  }
+.flex-full-justify {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
 
-  
-  .blink {
-    animation: blink 1s steps(1) infinite;
+.container-404 {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  margin-top: 150px;
+}
+
+.flex-full-justify {
+  padding: 3rem 4rem;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+
+  > .flex-inner {
+    max-width: 40rem;
   }
-  
-  @keyframes blink {
-    66% {
-      opacity: 0;
-    }
+}
+
+h2 {
+  background-color: silver;
+  color: #00a;
+  padding: 1rem 2rem;
+  display: inline-block;
+}
+
+h2,
+p {
+  text-align: center;
+}
+
+.blink {
+  animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink {
+  66% {
+    opacity: 0;
   }
-  
+}

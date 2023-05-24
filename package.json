@@ -6,7 +6,9 @@
     "start": "ng serve -o --host 0.0.0.0",
     "build": "ng build --aot --optimization --configuration production",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "prettier": "npx prettier --check .",
+    "prettier:fix": "npx prettier --write ."
   },
   "private": true,
   "dependencies": {
@@ -23,6 +25,7 @@
     "@zxing/browser": "^0.1.1",
     "@zxing/library": "^0.19.2",
     "@zxing/ngx-scanner": "^3.8.1",
+    "angularx-qrcode": "^15.0.1",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
     "zone.js": "~0.12.0"
@@ -38,6 +41,7 @@
     "karma-coverage": "~2.2.0",
     "karma-jasmine": "~5.1.0",
     "karma-jasmine-html-reporter": "~2.0.0",
+    "prettier": "2.8.8",
     "typescript": "~4.9.4"
   }
 }

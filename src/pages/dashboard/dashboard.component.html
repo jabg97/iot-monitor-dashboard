@@ -1,68 +1,191 @@
-
+<dialog #historyDialog>
+  <div class="dialog-header">
+    <h2>{{ currentDevice?.name ?? 'Unknown Device' }}</h2>
+    <button class="close-dialog" (click)="historyDialog.close()">X</button>
+  </div>
+  <div class="dialog-body">
+    <table *ngIf="currentDevice?.history?.length">
+      <caption>
+        {{
+          currentDevice?.history?.length ?? 0
+            | count : 'history record' : 'history records'
+        }}
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Date</th>
+          <th scope="col">State</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let row of currentDevice?.history">
+          <td>{{ row.dateTime | date : "short" : "+0000" }}</td>
+          <td class="td-column">
+            <small *ngFor="let state of row.state.split(' -:- ')" class="{{state.includes('Low') || state.includes('High') ? 'error-text': ''}}">
+              {{state}}
+            </small>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="error-text" *ngIf="!currentDevice?.history?.length">
+      We can't find history records linked to this device.
+    </p>
+  </div>
+</dialog>
 <div class="row" *ngIf="!devices.length">
-    <div class="col-12">
-        <h3 class="error-text centered-text">
-            We can't find devices linked to your account.
-        </h3>
-    </div>
+  <div class="col-12">
+    <h3 class="error-text centered-text">
+      We can't find devices linked to your account.
+    </h3>
+  </div>
 </div>
 <div *ngIf="devices.length">
-    <div class="row" *ngFor="let device of devices">
-        <div class="col-12">
-            <h3 class="centered-text">
-                {{ device.name ?? 'Unknown Device' }}
-            </h3> 
-        </div>
-        <div class="col-12 col-sm-6 col-lg-4">
-            <h5 class="warning-text centered-text" *ngIf="!device.range?.minAirTemperature || !device.range?.maxAirTemperature">
-                Please configure the air temperature range.
-            </h5>
-            <ejs-circulargauge style='display:block;' background='transparent' (load)='load($event)' *ngIf="device.range?.minAirTemperature && device.range?.maxAirTemperature">
-                <e-axes>
-                    <e-axis radius='80%' startAngle=230 endAngle=130 [majorTicks]='ticks' [minorTicks]='ticks'
-                        [lineStyle]="" [labelStyle]="labelStyle" minimum={{device.range?.minAirTemperature}}  maximum={{device.range?.maxAirTemperature}}>
-                        <e-pointers>
-                            <e-pointer value={{device.range?.minAirTemperature}} radius='60%' pointerWidth=7 color="#da677e" [animation]='animation' [cap]="cap"
-                                [needleTail]="tail">
-                            </e-pointer>
-                        </e-pointers>
-                    </e-axis>
-                </e-axes>
-            </ejs-circulargauge>
-        </div>
-        <div class="col-12 col-sm-6 col-lg-4">
-            <h5 class="warning-text centered-text" *ngIf="!device.range?.minHumidity || !device.range?.maxHumidity">
-                Please configure the humidity range.
-            </h5>
-            <ejs-circulargauge style='display:block;' background='transparent' (load)='load($event)' *ngIf="device.range?.minHumidity && device.range?.maxHumidity">
-                <e-axes>
-                    <e-axis radius='80%' startAngle=230 endAngle=130 [majorTicks]='ticks' [minorTicks]='ticks'
-                        [lineStyle]="" [labelStyle]="labelStyle" minimum={{device.range?.minHumidity}}  maximum={{device.range?.maxHumidity}}>
-                        <e-pointers>
-                            <e-pointer value={{device.range?.minHumidity}} radius='60%' pointerWidth=7 color="#da677e" [animation]='animation' [cap]="cap"
-                                [needleTail]="tail">
-                            </e-pointer>
-                        </e-pointers>
-                    </e-axis>
-                </e-axes>
-            </ejs-circulargauge>
-        </div>
-        <div class="col-12 col-sm-6 col-lg-4">
-            <h5 class="warning-text centered-text" *ngIf="!device.range?.minSoilMoisture || !device.range?.maxSoilMoisture">
-                Please configure the soil moisture range.
-            </h5>
-            <ejs-circulargauge style='display:block;' background='transparent' (load)='load($event)' *ngIf="device.range?.minSoilMoisture && device.range?.maxSoilMoisture">
-                <e-axes>
-                    <e-axis radius='80%' startAngle=230 endAngle=130 [majorTicks]='ticks' [minorTicks]='ticks'
-                        [lineStyle]="" [labelStyle]="labelStyle" minimum={{device.range?.minSoilMoisture}}  maximum={{device.range?.maxSoilMoisture}}>
-                        <e-pointers>
-                            <e-pointer value={{device.range?.minSoilMoisture}} radius='60%' pointerWidth=7 color="#da677e" [animation]='animation' [cap]="cap"
-                                [needleTail]="tail">
-                            </e-pointer>
-                        </e-pointers>
-                    </e-axis>
-                </e-axes>
-            </ejs-circulargauge>
-        </div>
+  <div class="row" *ngFor="let device of devices">
+    <div class="col-12">
+      <h3 class="centered-text">
+        {{ device.name ?? 'Unknown Device' }}
+      </h3>
     </div>
+    <div class="col-12 col-sm-6 col-lg-4 sensor-container">
+      <h5
+        class="warning-text centered-text"
+        *ngIf="
+          !device.range?.minAirTemperature || !device.range?.maxAirTemperature
+        ">
+        Please configure the air temperature range.
+      </h5>
+      <div
+        *ngIf="
+          device.range?.minAirTemperature && device.range?.maxAirTemperature
+        ">
+        <h5 class="success-text centered-text">Air temperature (°)</h5>
+        <ejs-circulargauge
+          style="display: block"
+          background="transparent"
+          (load)="load($event)">
+          <e-axes>
+            <e-axis
+              radius="80%"
+              startAngle="230"
+              endAngle="130"
+              [majorTicks]="ticks"
+              [minorTicks]="ticks"
+              [lineStyle]=""
+              [labelStyle]="labelStyle"
+              minimum="{{ device.range?.minAirTemperature }}"
+              maximum="{{ device.range?.maxAirTemperature }}">
+              <e-pointers>
+                <e-pointer
+                  value="{{
+                    device.sensor?.currentAirTemperature ??
+                      device.range?.minAirTemperature
+                  }}"
+                  radius="60%"
+                  pointerWidth="7"
+                  color="#da677e"
+                  [animation]="animation"
+                  [cap]="cap"
+                  [needleTail]="tail">
+                </e-pointer>
+              </e-pointers>
+            </e-axis>
+          </e-axes>
+        </ejs-circulargauge>
+      </div>
+    </div>
+    <div class="col-12 col-sm-6 col-lg-4 sensor-container">
+      <h5
+        class="warning-text centered-text"
+        *ngIf="!device.range?.minAirHumidity || !device.range?.maxAirHumidity">
+        Please configure the air humidity range.
+      </h5>
+      <div *ngIf="device.range?.minAirHumidity && device.range?.maxAirHumidity">
+        <h5 class="success-text centered-text">Air humidity (%)</h5>
+        <ejs-circulargauge
+          style="display: block"
+          background="transparent"
+          (load)="load($event)">
+          <e-axes>
+            <e-axis
+              radius="80%"
+              startAngle="230"
+              endAngle="130"
+              [majorTicks]="ticks"
+              [minorTicks]="ticks"
+              [lineStyle]=""
+              [labelStyle]="labelStyle"
+              minimum="{{ device.range?.minAirHumidity }}"
+              maximum="{{ device.range?.maxAirHumidity }}">
+              <e-pointers>
+                <e-pointer
+                  value="{{
+                    device.sensor?.currentAirHumidity ??
+                      device.range?.minAirHumidity
+                  }}"
+                  radius="60%"
+                  pointerWidth="7"
+                  color="#da677e"
+                  [animation]="animation"
+                  [cap]="cap"
+                  [needleTail]="tail">
+                </e-pointer>
+              </e-pointers>
+            </e-axis>
+          </e-axes>
+        </ejs-circulargauge>
+      </div>
+    </div>
+    <div class="col-12 col-sm-6 col-lg-4 sensor-container">
+      <h5
+        class="warning-text centered-text"
+        *ngIf="
+          !device.range?.minSoilMoisture || !device.range?.maxSoilMoisture
+        ">
+        Please configure the soil moisture range.
+      </h5>
+      <div
+        *ngIf="device.range?.minSoilMoisture && device.range?.maxSoilMoisture">
+        <h5 class="success-text centered-text">Soil moisture (%)</h5>
+        <ejs-circulargauge
+          style="display: block"
+          background="transparent"
+          (load)="load($event)">
+          <e-axes>
+            <e-axis
+              radius="80%"
+              startAngle="230"
+              endAngle="130"
+              [majorTicks]="ticks"
+              [minorTicks]="ticks"
+              [lineStyle]=""
+              [labelStyle]="labelStyle"
+              minimum="{{ device.range?.minSoilMoisture }}"
+              maximum="{{ device.range?.maxSoilMoisture }}">
+              <e-pointers>
+                <e-pointer
+                  value="{{
+                    device.sensor?.currentSoilMoisture ??
+                      device.range?.minSoilMoisture
+                  }}"
+                  radius="60%"
+                  pointerWidth="7"
+                  color="#da677e"
+                  [animation]="animation"
+                  [cap]="cap"
+                  [needleTail]="tail">
+                </e-pointer>
+              </e-pointers>
+            </e-axis>
+          </e-axes>
+        </ejs-circulargauge>
+      </div>
+    </div>
+    <div class="col-12 history-container">
+      <p>Last time updated: <strong class="warning-text">{{ device.history && device.history.length ? (device.history[0].dateTime  | date: 'short' : "+0000") : 'Never'}}</strong></p>
+      <button class="btn-success" (click)="showHistory(device); historyDialog.show()">
+          History records
+      </button>
+    </div>
+  </div>
 </div>

@@ -6,16 +6,15 @@ import { Router } from '@angular/router';
   templateUrl: './not-found.component.html',
   styleUrls: ['./not-found.component.scss'],
 })
-export class NotFoundComponent{
+export class NotFoundComponent {
+  constructor(private router: Router) {}
 
-constructor(private router: Router) {}
-
-@HostListener('document:keypress', ['$event'])
-  handleKeyboardEvent(event: KeyboardEvent) { 
+  @HostListener('document:keypress', ['$event'])
+  handleKeyboardEvent(event: KeyboardEvent) {
     this.redirect();
   }
 
   redirect(): void {
     this.router.navigate(['/']);
- }
+  }
 }

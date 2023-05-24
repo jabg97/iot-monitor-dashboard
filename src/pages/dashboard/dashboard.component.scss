@@ -1,5 +1,25 @@
-.row{
+.row {
+  align-items: center;
+  justify-content: center;
+  border-bottom: 3px groove hsl(var(--hs-static), var(--l-low));
+  .sensor-container {
+    h5 {
+      margin: 0px;
+      margin-top: 60px;
+    }
+  }
+  .history-container {
+    display: flex;
+    padding: 20px 0;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    border-bottom: 3px groove hsl(var(--hs-static), var(--l-low));
+  }
+}
+
+td.td-column{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
