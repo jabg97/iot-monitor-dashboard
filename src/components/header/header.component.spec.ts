@@ -15,6 +15,13 @@ describe('NotFoundComponent', () => {
     fixture.detectChanges();
   });
 
+  it(`should have as title 'iot-monitor-dashboard'`, () => {
+    const fixture = TestBed.createComponent(HeaderComponent);
+    const header = fixture.componentInstance;
+    expect(header.title).toEqual('iot-monitor-dashboard');
+  });
+
+
   it('should create', () => {
     expect(component).toBeTruthy();
   });

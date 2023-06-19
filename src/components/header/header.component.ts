@@ -1,5 +1,6 @@
-import { Component, Input } from '@angular/core';
+import { Component, EventEmitter, Output } from '@angular/core';
 import { Router } from '@angular/router';
+import { AzureService } from 'src/services/azure.service';
 
 @Component({
   selector: 'app-header',
@@ -7,13 +8,18 @@ import { Router } from '@angular/router';
   styleUrls: ['./header.component.scss'],
 })
 export class HeaderComponent {
+
+  @Output()
+  close = new EventEmitter<void>();
+  
   title = 'IoT Monitor';
 
-  @Input() user = '';
+  user = '';
 
-  constructor(public router: Router) {}
-
+  constructor(public router: Router, private azureService: AzureService) {
+    this.user = azureService.getUserName();
+  }
   logOut() {
-    alert('test');
+    this.close.emit();
   }
 }
