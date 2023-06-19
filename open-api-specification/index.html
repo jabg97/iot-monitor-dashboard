@@ -53,6 +53,17 @@
                       },
                     },
                   },
+                  "404": {
+                    description: "We can't find crops to monitorize.",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          $ref: "#/components/schemas/AzureFailResponse",
+                        },
+                      },
+                    },
+                  },
                 },
               },
               post: {
@@ -60,7 +71,7 @@
                 operationId: "post-register-crop",
                 responses: {
                   "200": {
-                    description: "This endpoint is used to register a crop.",
+                    description: "The crop has been registered successfully",
                     content: {
                       "application/json": {
                         schema: {
@@ -145,6 +156,17 @@
                       },
                     },
                   },
+                  "404": {
+                    description: "We can't find devices linked to your account.",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          $ref: "#/components/schemas/AzureFailResponse",
+                        },
+                      },
+                    },
+                  },
                 },
               },
             },
@@ -155,7 +177,15 @@
                 description: "This endpoint is used to register a device.",
                 responses: {
                   "200": {
-                    description: "Registration successful.",
+                    description: "The device has been registered successfully.",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          $ref: "#/components/schemas/AzureDeviceResponse",
+                        },
+                      },
+                    },
                   },
                 },
               },
