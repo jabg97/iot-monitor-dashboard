@@ -1,0 +1,491 @@
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/3.19.5/swagger-ui.css"
+    />
+    <style>
+      .topbar {
+        display: none;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="swagger-ui"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/3.19.5/swagger-ui-bundle.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/3.19.5/swagger-ui-standalone-preset.js"></script>
+    <script>
+      window.onload = function () {
+        var spec = {
+          openapi: "3.0.1",
+          info: {
+            title: "iot-monitor-functions",
+            description:
+              'OAS V3 documentation from "iot-monitor-functions" Azure Function App',
+            version: "1.0",
+          },
+          servers: [
+            {
+              url:
+                "https://iot-monitor-functions-api.azure-api.net/iot-monitor-functions",
+            },
+          ],
+          paths: {
+            "/crops": {
+              get: {
+                summary: "search-all-crops",
+                operationId: "get-search-all-crops",
+                description: "This endpoint is used to search all crops.",
+                responses: {
+                  "200": {
+                    description: "Returns the search results for all crops.",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "array",
+                          items: {
+                            $ref: "#/components/schemas/Crop",
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              post: {
+                summary: "register-crop",
+                operationId: "post-register-crop",
+                responses: {
+                  "200": {
+                    description: "This endpoint is used to register a crop.",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          $ref: "#/components/schemas/AzureCropResponse",
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            "/crops/{id}": {
+              put: {
+                summary: "update-crop",
+                operationId: "put-update-crop",
+                description: "This endpoint is used to update a crop.",
+                parameters: [
+                  {
+                    name: "id",
+                    in: "path",
+                    required: true,
+                    schema: {
+                      type: "string",
+                    },
+                  },
+                ],
+                responses: {
+                  "200": {
+                    description: "The crop has been updated successfully.",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          $ref: "#/components/schemas/AzureCropResponse",
+                        },
+                      },
+                    },
+                  },
+                  "404": {
+                    description: "We can't find the crop.",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          $ref: "#/components/schemas/AzureFailResponse",
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            "/devices/search/byUser/{id}": {
+              get: {
+                summary: "search-devices-by-user-id",
+                operationId: "get-search-devices-by-user-id",
+                description:
+                  "This endpoint is used to search devices by user id.",
+                parameters: [
+                  {
+                    name: "id",
+                    in: "path",
+                    required: true,
+                    schema: {
+                      type: "string",
+                    },
+                  },
+                ],
+                responses: {
+                  "200": {
+                    description:
+                      "Returns the search results for devices by user id.",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "array",
+                          items: {
+                            $ref: "#/components/schemas/Device",
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            "/devices": {
+              post: {
+                summary: "register-device",
+                operationId: "post-register-device",
+                description: "This endpoint is used to register a device.",
+                responses: {
+                  "200": {
+                    description: "Registration successful.",
+                  },
+                },
+              },
+            },
+            "/devices/{id}": {
+              put: {
+                summary: "update-device",
+                operationId: "put-update-device",
+                description: "This endpoint is used to update a device.",
+                parameters: [
+                  {
+                    name: "id",
+                    in: "path",
+                    required: true,
+                    schema: {
+                      type: "string",
+                    },
+                  },
+                ],
+                responses: {
+                  "200": {
+                    description: "The device has been updated successfully.",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          $ref: "#/components/schemas/AzureDeviceResponse",
+                        },
+                      },
+                    },
+                  },
+                  "404": {
+                    description: "We can't find the device.",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          $ref: "#/components/schemas/AzureFailResponse",
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            "/devices/read/{id}": {
+              put: {
+                summary: "read-device",
+                operationId: "put-read-device",
+                description:
+                  "This endpoint is used to read a device sensor information and notify the user.",
+                parameters: [
+                  {
+                    name: "id",
+                    in: "path",
+                    required: true,
+                    schema: {
+                      type: "string",
+                    },
+                  },
+                ],
+                responses: {
+                  "200": {
+                    description: "The device has been readed successfully.",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          $ref: "#/components/schemas/AzureDeviceResponse",
+                        },
+                      },
+                    },
+                  },
+                  "404": {
+                    description: "We can't find the device.",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          $ref: "#/components/schemas/AzureFailResponse",
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            "/devices/{id}/link/byUser": {
+              put: {
+                summary: "link-device",
+                operationId: "put-link-device",
+                description:
+                  "This endpoint is used to link a device to a user.",
+                parameters: [
+                  {
+                    name: "id",
+                    in: "path",
+                    required: true,
+                    schema: {
+                      type: "string",
+                    },
+                  },
+                ],
+                responses: {
+                  "200": {
+                    description:
+                      "The device has been linked/unlinked successfully.",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          $ref: "#/components/schemas/AzureDeviceResponse",
+                        },
+                      },
+                    },
+                  },
+                  "403": {
+                    description: "You can't link/unlink this device.",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          $ref: "#/components/schemas/AzureFailResponse",
+                        },
+                      },
+                    },
+                  },
+                  "404": {
+                    description: "We can't find the device.",
+                    content: {
+                      "application/json": {
+                        schema: {
+                          type: "object",
+                          $ref: "#/components/schemas/AzureFailResponse",
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          components: {
+            securitySchemes: {
+              apiKeyHeader: {
+                type: "apiKey",
+                name: "Ocp-Apim-Subscription-Key",
+                in: "header",
+              },
+              apiKeyQuery: {
+                type: "apiKey",
+                name: "subscription-key",
+                in: "query",
+              },
+            },
+            schemas: {
+              ClimateVariables: {
+                type: "object",
+                properties: {
+                  currentAirTemperature: {
+                    type: "number",
+                  },
+                  currentAirHumidity: {
+                    type: "number",
+                  },
+                  currentSoilMoisture: {
+                    type: "number",
+                  },
+                },
+              },
+              ClimateRange: {
+                type: "object",
+                properties: {
+                  minAirTemperature: {
+                    type: "number",
+                  },
+                  maxAirTemperature: {
+                    type: "number",
+                  },
+                  minAirHumidity: {
+                    type: "number",
+                  },
+                  maxAirHumidity: {
+                    type: "number",
+                  },
+                  minSoilMoisture: {
+                    type: "number",
+                  },
+                  maxSoilMoisture: {
+                    type: "number",
+                  },
+                },
+              },
+              History: {
+                type: "object",
+                properties: {
+                  dateTime: {
+                    type: "string",
+                  },
+                  state: {
+                    type: "string",
+                  },
+                  cropId: {
+                    type: "string",
+                    nullable: true,
+                  },
+                  sensor: {
+                    $ref: "#/components/schemas/ClimateVariables",
+                    nullable: true,
+                  },
+                },
+              },
+              Crop: {
+                type: "object",
+                properties: {
+                  id: {
+                    type: "string",
+                  },
+                  name: {
+                    type: "string",
+                  },
+                  range: {
+                    $ref: "#/components/schemas/ClimateRange",
+                    nullable: true,
+                  },
+                },
+              },
+              Device: {
+                type: "object",
+                properties: {
+                  id: {
+                    type: "string",
+                  },
+                  name: {
+                    type: "string",
+                    nullable: true,
+                  },
+                  userId: {
+                    type: "string",
+                    nullable: true,
+                  },
+                  cropId: {
+                    type: "string",
+                    nullable: true,
+                  },
+                  contact: {
+                    type: "string",
+                    nullable: true,
+                  },
+                  history: {
+                    type: "array",
+                    items: {
+                      $ref: "#/components/schemas/History",
+                    },
+                    nullable: true,
+                  },
+                  range: {
+                    $ref: "#/components/schemas/ClimateRange",
+                    nullable: true,
+                  },
+                  sensor: {
+                    $ref: "#/components/schemas/ClimateVariables",
+                    nullable: true,
+                  },
+                },
+              },
+              AzureCropResponse: {
+                type: "object",
+                properties: {
+                  status: {
+                    type: "number",
+                  },
+                  message: {
+                    type: "string",
+                  },
+                  crop: {
+                    $ref: "#/components/schemas/Crop",
+                    nullable: true,
+                  },
+                },
+              },
+              AzureDeviceResponse: {
+                type: "object",
+                properties: {
+                  status: {
+                    type: "number",
+                  },
+                  message: {
+                    type: "string",
+                  },
+                  device: {
+                    $ref: "#/components/schemas/Device",
+                    nullable: true,
+                  },
+                },
+              },
+              AzureFailResponse: {
+                type: "object",
+                properties: {
+                  status: {
+                    type: "number",
+                  },
+                  message: {
+                    type: "string",
+                  },
+                },
+              },
+            },
+          },
+          security: [
+            {
+              apiKeyHeader: [],
+            },
+            {
+              apiKeyQuery: [],
+            },
+          ],
+        };
+
+        const ui = SwaggerUIBundle({
+          spec: spec,
+          dom_id: "#swagger-ui",
+          deepLinking: true,
+          presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+          plugins: [SwaggerUIBundle.plugins.DownloadUrl],
+          layout: "StandaloneLayout",
+        });
+
+        window.ui = ui;
+      };
+    </script>
+  </body>
+</html>

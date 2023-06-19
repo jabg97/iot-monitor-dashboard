@@ -5,22 +5,31 @@ import { environment } from 'src/environments/environment';
 import { AzureResponse } from 'src/models/response.model';
 import { Device } from 'src/models/device.model';
 import { Crop } from 'src/models/crop.model';
+import { User } from '@auth0/auth0-angular';
 
 @Injectable({
   providedIn: 'root',
 })
 export class AzureService {
   baseUrl: string = environment.baseurl;
-  userId = 'auth0|641f9448f939365a568f266e';
 
   constructor(private http: HttpClient) {}
 
-  setUserId(userId: string): void {
-    this.userId = userId;
+
+  private getUser(): User | null {
+    const ls = localStorage.getItem('iot-auth0-user');
+    if(ls){
+      return JSON.parse(ls.toString() ?? "{}") as User;
+    }
+    return null;
   }
 
   getUserId(): string {
-    return this.userId;
+    return this.getUser()?.sub ?? "Unknown";
+  }
+
+  getUserName(): string {
+    return this.getUser()?.nickname ?? "Unknown";
   }
 
   getDevicesByuser(): Observable<Array<Device>> {
