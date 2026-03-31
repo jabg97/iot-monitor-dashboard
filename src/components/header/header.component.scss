@@ -3,12 +3,16 @@ header{
         ul{
             li{
                 a{
+                  transition: background-color 0.2s ease, color 0.2s ease;
+                  border-radius: 0.375rem;
+
                   &.active{
                     background-color: hsl(var(--hs-interactive), var(--l-interactive));
                     color: hsl(var(--hs-static), var(--l-highest));
                     text-decoration-line: none;
                     outline: 2px solid hsl(var(--hs-interactive), var(--l-interactive));
                     outline-offset: 0.25rem;
+                    border-radius: 0.375rem;
                   }  
                 }
             }
