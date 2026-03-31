@@ -3,54 +3,82 @@ name: Gemini AI Code Review
 on:
   pull_request_target:
     types: [labeled]
-  issue_comment:
-    types: [created]
 
 jobs:
   gemini-review:
     name: AI Code Review
     runs-on: ubuntu-latest
 
-    # For labeled PRs, only run if the label is 'ai-review'
-    # For issue comments, only run if it's a PR comment containing '/review' or '@pr'
-    if: |
-      (github.event_name == 'pull_request_target' && github.event.label.name == 'ai-review') ||
-      (
-        github.event_name == 'issue_comment' &&
-        github.event.issue.pull_request != null &&
-        (
-          contains(github.event.comment.body, '/review') ||
-          contains(github.event.comment.body, '@pr')
-        )
-      )
+    if: >-
+      github.event.label.name == 'flash-review' ||
+      github.event.label.name == 'pro-review'
 
     permissions:
       pull-requests: write
       issues: write
-      contents: read
+      contents: write
 
     steps:
-      - name: Checkout repository
+      - name: Checkout base
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Python 3.10
+      # Resuelve modelo según etiqueta y hace checkout a la rama del PR
+      - name: Resolver contexto del PR
+        id: ctx
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+
+          if [ "${{ github.event.label.name }}" = "pro-review" ]; then
+            MODEL="gemini-2.5-pro"
+          else
+            MODEL="gemini-2.5-flash"
+          fi
+
+          PR_HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName --jq '.headRefName')
+
+          echo "pr_number=$PR_NUMBER"     >> "$GITHUB_OUTPUT"
+          echo "model=$MODEL"             >> "$GITHUB_OUTPUT"
+          echo "pr_head_ref=$PR_HEAD_REF" >> "$GITHUB_OUTPUT"
+
+          gh pr checkout "$PR_NUMBER"
+
+      - name: Configurar Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
-      - name: Install Python dependencies
+      - name: Instalar dependencias
         run: |
-          python -m pip install --upgrade pip
-          pip install google-genai requests
+          pip install --quiet google-genai requests
 
-      - name: Run Gemini PR Review
+      - name: Ejecutar revisión con Gemini
+        id: review
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GEMINI_API_KEY:    ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
+          GEMINI_MODEL:      ${{ steps.ctx.outputs.model }}
+          PR_NUMBER:         ${{ steps.ctx.outputs.pr_number }}
         run: |
           python .github/scripts/gemini_review.py
+
+      - name: Crear PR con las correcciones automáticas
+        if: steps.review.outputs.verdict == 'CORREGIDO'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "fix: correcciones automáticas de Gemini ${{ steps.ctx.outputs.model }}"
+          title: "fix: correcciones automáticas de Gemini para PR #${{ steps.ctx.outputs.pr_number }}"
+          body: |
+            Gemini **${{ steps.ctx.outputs.model }}** revisó el código del PR #${{ steps.ctx.outputs.pr_number }} y generó estas correcciones automáticas.
+
+            > Revisa los cambios antes de fusionar esta rama.
+          branch: "gemini-fixes-${{ steps.ctx.outputs.pr_number }}"
+          base: ${{ steps.ctx.outputs.pr_head_ref }}
+          labels: "ai-fixes"
