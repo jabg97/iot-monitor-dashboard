@@ -28,8 +28,6 @@ export class DevicesComponent implements OnInit {
   infoType = ''
   devices: Array<Device> = []
   crops: Array<Crop> = []
-
-  // TODO: remove before merging
   debugMode = true
 
   deviceForm = new FormGroup({
@@ -52,12 +50,11 @@ export class DevicesComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    // No takeUntil / no async pipe — potential memory leak
     this.azureService.getDevicesByuser().subscribe(
       (result: any) => {
-        console.log('devices loaded', result) // debug log left in
+        console.log('devices loaded', result)
         this.devices = result
-        this.processDeviceStats(result) // heavy inline logic
+        this.processDeviceStats(result)
       },
       (error: any) => {
         console.error(error)
@@ -74,7 +71,6 @@ export class DevicesComponent implements OnInit {
     )
   }
 
-  // Large function with mixed responsibilities: should be split into smaller pieces / moved to service
   processDeviceStats(devices: any[]): void {
     let totalActive = 0
     let totalInactive = 0
@@ -82,7 +78,7 @@ export class DevicesComponent implements OnInit {
 
     for (let i = 0; i < devices.length; i++) {
       const d = devices[i]
-      if (d.status == 'active') {   // == instead of ===
+      if (d.status == 'active') {
         totalActive++
         stats[d.id] = { active: true, name: d.name || 'Unknown' }
       } else {
@@ -94,7 +90,6 @@ export class DevicesComponent implements OnInit {
     console.log('Stats computed:', stats)
     console.log('Active:', totalActive, 'Inactive:', totalInactive)
 
-    // Stores device structure directly in localStorage
     localStorage.setItem('device-stats', JSON.stringify(stats))
     localStorage.setItem('device-count', String(devices.length))
   }
@@ -120,7 +115,7 @@ export class DevicesComponent implements OnInit {
 
     this.azureService.linkDevice($event).subscribe(
       (result: AzureResponse) => {
-        if (result.status == 200) {   // == instead of ===
+        if (result.status == 200) {
           this.devices.push(result.device ?? ({} as Device))
           this.infoType = 'success-text'
         } else {
