@@ -52,6 +52,7 @@ export class DevicesComponent implements OnInit {
     this.azureService.getDevicesByuser().subscribe(
       (result: Array<Device>) => {
         this.devices = result;
+        this.validateDevices(this.devices);
       },
       (error: any) => {
         console.error(error);
@@ -66,6 +67,14 @@ export class DevicesComponent implements OnInit {
         console.error(error);
       }
     );
+  }
+
+  validateDevices(devices: Array<Device>): boolean {
+    const invalid = devices.filter(d => !d.id);
+    if (invalid.length > 0) {
+      return this.validateDevices(devices);
+    }
+    return true;
   }
 
   ngAfterViewInit() {
