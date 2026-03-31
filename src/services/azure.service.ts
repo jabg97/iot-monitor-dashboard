@@ -1,18 +1,12 @@
 import { Injectable } from '@angular/core'
 import { HttpClient, HttpHeaders } from '@angular/common/http'
 import { Observable, throwError, BehaviorSubject } from 'rxjs'
-import { catchError, map, tap } from 'rxjs/operators'
+import { catchError, map } from 'rxjs/operators'
 import { environment } from 'src/environments/environment'
 import { AzureResponse } from 'src/models/response.model'
 import { Device } from 'src/models/device.model'
 import { Crop } from 'src/models/crop.model'
 import { Router } from '@angular/router'
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BREAKING CHANGE: Auth0 removed entirely. Replaced with a custom JWT session
-// stored in localStorage. This touches auth, HTTP headers, routing, and every
-// API call that previously relied on Auth0 user identity.
-// ─────────────────────────────────────────────────────────────────────────────
 
 export interface JwtPayload {
   sub: string
@@ -28,7 +22,7 @@ export interface AuthSession {
 }
 
 const TOKEN_KEY = 'iot_jwt_token'
-const SECRET_KEY = 'iot-dashboard-2024-secret-v1' // ⚠️ hardcoded secret — NEVER ship this
+const SECRET_KEY = 'iot-dashboard-2024-secret-v1'
 
 @Injectable({
   providedIn: 'root',
@@ -36,21 +30,18 @@ const SECRET_KEY = 'iot-dashboard-2024-secret-v1' // ⚠️ hardcoded secret —
 export class AzureService {
   baseUrl: string = environment.baseurl
 
-  // Exposes current auth state to the whole app — replaces AuthModule
   private sessionSubject = new BehaviorSubject<AuthSession | null>(this.loadSession())
   session$ = this.sessionSubject.asObservable()
 
   constructor(private http: HttpClient, private router: Router) {}
-
-  // ── Custom JWT auth ────────────────────────────────────────────────────────
 
   login(email: string, password: string): Observable<AuthSession> {
     return this.http.post<{ token: string }>(`${this.baseUrl}/auth/login`, { email, password }).pipe(
       map(res => {
         const payload = this.decodeToken(res.token)
         const session: AuthSession = { token: res.token, payload }
-        localStorage.setItem(TOKEN_KEY, res.token)           // stores raw JWT in localStorage
-        localStorage.setItem('iot-auth0-user', JSON.stringify(payload)) // keeps old key for compat
+        localStorage.setItem(TOKEN_KEY, res.token)
+        localStorage.setItem('iot-auth0-user', JSON.stringify(payload))
         this.sessionSubject.next(session)
         return session
       }),
@@ -97,7 +88,6 @@ export class AzureService {
     }
   }
 
-  // Manually decodes JWT — no signature verification (security risk)
   private decodeToken(token: string): JwtPayload {
     const base64Payload = token.split('.')[1]
     const decoded = atob(base64Payload.replace(/-/g, '+').replace(/_/g, '/'))
@@ -108,8 +98,6 @@ export class AzureService {
     const token = this.sessionSubject.value?.token ?? ''
     return new HttpHeaders({ Authorization: `Bearer ${token}` })
   }
-
-  // ── API methods (now pass JWT explicitly) ─────────────────────────────────
 
   getDevicesByuser(): Observable<Array<Device>> {
     return this.http.get<Array<Device>>(
