@@ -1,81 +1,128 @@
-import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
-import {
-  GaugeTheme,
-  ILoadedEventArgs,
-} from '@syncfusion/ej2-angular-circulargauge';
-import { Device } from 'src/models/device.model';
-import { History } from 'src/models/history.model';
-import { AzureService } from 'src/services/azure.service';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { AzureService } from 'src/app/services/azure.service';
+import { Device } from 'src/app/models/device.model'; // Asumiendo esta es la ruta correcta del modelo Device
+import { ILoadedEventArgs, GaugeTheme } from '@syncfusion/ej2-angular-gauges';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
+
+// Definimos interfaces para mejorar la seguridad de tipos
+interface ExtendedDevice extends Device {
+  status: 'active' | 'inactive';
+  alert?: boolean;
+  alertLevel?: string;
+}
+
+interface DashboardStats {
+  total: number;
+  active: number;
+  inactive: number;
+  alerts: number;
+  map: { [key: string]: { status: 'active' | 'inactive', name: string } };
+}
+
+interface AlertDevice {
+  id: string;
+  name: string;
+  level: string;
+}
 
 @Component({
   selector: 'app-dashboard',
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.scss'],
 })
-export class DashboardComponent implements OnInit {
-  @ViewChild('historyDialog') historyDialogRef?: ElementRef;
-  historyDialog?: HTMLDialogElement;
+export class DashboardComponent implements OnInit, OnDestroy { // Implementamos OnDestroy
 
   devices: Array<Device> = [];
   currentDevice?: Device;
-  dashboardStats: any = {};
-  alertDevices: any[] = [];
+  dashboardStats: DashboardStats = { total: 0, active: 0, inactive: 0, alerts: 0, map: {} }; // Tipado
+  alertDevices: AlertDevice[] = []; // Tipado
   lastSync: string = '';
 
   ticks: Object = {
     offset: 5,
-  };
-
-  lineStyle: Object = {
-    width: 8,
-    color: '#E0E0E0',
-  };
-
-  labelStyle: Object = {
-    font: {
-      fontFamily: 'Perfect Dos',
+    interval: 10,
+    color: '#9E9E9E',
+    height: 10,
+    width: 1,
+    position: 'Outside',
+    labelStyle: {
+      font: {
+        size: '12px',
+        fontFamily: 'inherit',
+      },
     },
-    offset: -1,
   };
 
-  animation: Object = {
-    enable: true,
-    duration: 2000,
-  };
+  pointers: Object = [
+    {
+      value: 80,
+      radius: '80%',
+      color: '#E02020',
+      cap: {
+        radius: 8,
+        border: {
+          width: 0,
+        },
+      },
+      needleTail: {
+        length: '20%',
+      },
+    },
+  ];
 
-  cap: Object = {
-    radius: 8,
-    color: '#0000ff',
-    border: { width: 0 },
-  };
+  ranges: Object = [
+    {
+      start: 0,
+      end: 70,
+      radius: '110%',
+      startWidth: 25,
+      endWidth: 25,
+      color: '#30B32D',
+    },
+    {
+      start: 70,
+      end: 100,
+      radius: '110%',
+      startWidth: 25,
+      endWidth: 25,
+      color: '#E02020',
+    },
+  ];
 
-  tail: Object = {
-    length: '0%',
-  };
+  colorScheme: string = 'Light';
 
-  colorScheme = '';
+  private destroy$ = new Subject<void>(); // Subject para gestionar las suscripciones
+
   constructor(private azureService: AzureService) {}
 
   ngOnInit(): void {
     this.loadDashboardData();
   }
 
+  ngOnDestroy(): void { // Hook del ciclo de vida para limpiar suscripciones
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   loadDashboardData(): void {
-    this.azureService.getDevicesByuser().subscribe(
+    this.azureService.getDevicesByuser().pipe(
+      takeUntil(this.destroy$) // Asegura que la suscripción se desuscriba al destruir el componente
+    ).subscribe(
       (result: Array<Device>) => {
         this.devices = result;
 
         let activeCount = 0;
         let inactiveCount = 0;
         let alertCount = 0;
-        const alerts: any[] = [];
-        const statsMap: any = {};
+        const alerts: AlertDevice[] = []; // Tipado
+        const statsMap: { [key: string]: { status: 'active' | 'inactive', name: string } } = {}; // Tipado
 
         for (let i = 0; i < result.length; i++) {
-          const device = result[i];
+          const device = result[i] as ExtendedDevice; // Asertamos el tipo para incluir propiedades adicionales
           const key = device.id;
 
-          if ((device as any).status === 'active') {
+          if (device.status === 'active') {
             activeCount++;
             statsMap[key] = { status: 'active', name: device.name };
           } else {
@@ -83,9 +130,9 @@ export class DashboardComponent implements OnInit {
             statsMap[key] = { status: 'inactive', name: device.name };
           }
 
-          if ((device as any).alert === true) {
+          if (device.alert === true) {
             alertCount++;
-            alerts.push({ id: device.id, name: device.name, level: (device as any).alertLevel || 'unknown' });
+            alerts.push({ id: device.id, name: device.name, level: device.alertLevel || 'unknown' });
           }
         }
 
@@ -106,32 +153,10 @@ export class DashboardComponent implements OnInit {
 
         console.log('Dashboard loaded', this.dashboardStats);
       },
-      (error: any) => {
+      (error: any) => { // El tipo 'any' para el error puede ser aceptable si la estructura del error es variable o desconocida
         console.error(error);
       }
     );
-
-    if (
-      window.matchMedia &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches
-    ) {
-      this.colorScheme = 'Dark';
-      this.cap = {
-        radius: 8,
-        color: '#9999ff',
-        border: { width: 0 },
-      };
-    }
-  }
-
-  ngAfterViewInit() {
-    this.historyDialog = this.historyDialogRef
-      ?.nativeElement as HTMLDialogElement;
-    console.info(this.historyDialog, this.historyDialogRef?.nativeElement);
-  }
-
-  showHistory(device: Device) {
-    this.currentDevice = device;
   }
 
   load(args: ILoadedEventArgs): void {
