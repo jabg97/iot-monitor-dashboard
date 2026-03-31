@@ -1,3 +1,4 @@
+```typescript
 import { Injectable } from '@angular/core'
 import { HttpClient, HttpHeaders } from '@angular/common/http'
 import { Observable, throwError, BehaviorSubject } from 'rxjs'
@@ -22,7 +23,7 @@ export interface AuthSession {
 }
 
 const TOKEN_KEY = 'iot_jwt_token'
-const SECRET_KEY = 'iot-dashboard-2024-secret-v1'
+// Se elimina la SECRET_KEY. Las claves secretas nunca deben estar en el frontend.
 
 @Injectable({
   providedIn: 'root',
@@ -39,8 +40,13 @@ export class AzureService {
     return this.http.post<{ token: string }>(`${this.baseUrl}/auth/login`, { email, password }).pipe(
       map(res => {
         const payload = this.decodeToken(res.token)
+        if (!payload) {
+          // Si el token del servidor es inválido, se trata como un fallo de login.
+          throw new Error('Invalid token received from server.');
+        }
         const session: AuthSession = { token: res.token, payload }
         localStorage.setItem(TOKEN_KEY, res.token)
+        // Se mantiene por compatibilidad con otras partes que puedan usarlo, aunque lo ideal sería refactorizarlo.
         localStorage.setItem('iot-auth0-user', JSON.stringify(payload))
         this.sessionSubject.next(session)
         return session
@@ -62,6 +68,7 @@ export class AzureService {
   isAuthenticated(): boolean {
     const session = this.sessionSubject.value
     if (!session) return false
+    // Comprueba que el token no haya expirado.
     return session.payload.exp * 1000 > Date.now()
   }
 
@@ -76,22 +83,28 @@ export class AzureService {
   private loadSession(): AuthSession | null {
     const token = localStorage.getItem(TOKEN_KEY)
     if (!token) return null
-    try {
-      const payload = this.decodeToken(token)
-      if (payload.exp * 1000 < Date.now()) {
-        localStorage.removeItem(TOKEN_KEY)
-        return null
-      }
-      return { token, payload }
-    } catch {
+
+    const payload = this.decodeToken(token)
+    if (!payload || payload.exp * 1000 < Date.now()) {
+      // Si el token es inválido o ha expirado, se limpia.
+      localStorage.removeItem(TOKEN_KEY)
       return null
     }
+    return { token, payload }
   }
 
-  private decodeToken(token: string): JwtPayload {
-    const base64Payload = token.split('.')[1]
-    const decoded = atob(base64Payload.replace(/-/g, '+').replace(/_/g, '/'))
-    return JSON.parse(decoded) as JwtPayload
+  private decodeToken(token: string): JwtPayload | null {
+    try {
+      const base64Payload = token.split('.')[1]
+      if (!base64Payload) {
+        return null;
+      }
+      const decoded = atob(base64Payload.replace(/-/g, '+').replace(/_/g, '/'))
+      return JSON.parse(decoded) as JwtPayload
+    } catch (error) {
+      console.error('Failed to decode JWT token', error);
+      return null;
+    }
   }
 
   private authHeaders(): HttpHeaders {
@@ -161,3 +174,4 @@ export class AzureService {
     )
   }
 }
+```
