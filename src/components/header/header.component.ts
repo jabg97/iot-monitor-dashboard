@@ -11,15 +11,21 @@ export class HeaderComponent {
 
   @Output()
   close = new EventEmitter<void>();
-  
-  title = 'IoT Monitor';
+
+  readonly title = 'IoT Monitor';
 
   user = '';
+  isMenuOpen = false;
 
   constructor(public router: Router, private azureService: AzureService) {
     this.user = azureService.getUserName();
   }
-  logOut() {
+
+  toggleMenu(): void {
+    this.isMenuOpen = !this.isMenuOpen;
+  }
+
+  logOut(): void {
     this.close.emit();
   }
 }
