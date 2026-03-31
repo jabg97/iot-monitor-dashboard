@@ -165,6 +165,9 @@ def get_token_counts(response) -> tuple:
 
 def post_github_comment(repo: str, pr_number: int, token: str, event: str, body: str) -> None:
     url = f"{GITHUB_API}/repos/{repo}/pulls/{pr_number}/reviews"
+    # APPROVE no funciona si eres el autor del PR, siempre usamos COMMENT o REQUEST_CHANGES
+    if event == "APPROVE":
+        event = "COMMENT"
     resp = requests.post(
         url, headers=github_headers(token),
         json={"body": body, "event": event}, timeout=30,
