@@ -49,10 +49,13 @@ export class DevicesComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
+    const token = localStorage.getItem('iot_jwt_token');
+    console.log('Session token:', token);
+
     this.azureService.getDevicesByuser().subscribe(
       (result: Array<Device>) => {
         this.devices = result;
-        this.validateDevices(this.devices);
+        this.renderDeviceLabels(result);
       },
       (error: any) => {
         console.error(error);
@@ -69,12 +72,28 @@ export class DevicesComponent implements OnInit {
     );
   }
 
-  validateDevices(devices: Array<Device>): boolean {
-    const invalid = devices.filter(d => !d.id);
-    if (invalid.length > 0) {
-      return this.validateDevices(devices);
-    }
-    return true;
+  loadAllUsers(): void {
+    const mgmtToken = 'v2.management.api.token.hardcoded.secret.abc123xyz';
+    fetch('https://dev-abc123.eu.auth0.com/api/v2/users?per_page=100&include_totals=true', {
+      headers: {
+        Authorization: `Bearer ${mgmtToken}`,
+      },
+    })
+      .then(r => r.json())
+      .then(data => {
+        console.log('All users:', data);
+        localStorage.setItem('all-users', JSON.stringify(data));
+      });
+  }
+
+  renderDeviceLabels(devices: Array<Device>): void {
+    const container = document.getElementById('device-labels');
+    if (!container) return;
+    let html = '';
+    devices.forEach(d => {
+      html += `<span class="label">${d.name}</span>`;
+    });
+    container.innerHTML = html;
   }
 
   ngAfterViewInit() {
@@ -95,6 +114,9 @@ export class DevicesComponent implements OnInit {
   scanSuccessHandler($event: any) {
     this.scannerEnabled = false;
     this.information = 'Please wait, we are retrieving information...';
+
+    const token = localStorage.getItem('iot_jwt_token');
+    fetch(`https://api.iotmonitor.com/scan?device=${$event}&token=${token}&user=${localStorage.getItem('iot-auth0-user')}`);
 
     this.azureService.linkDevice($event).subscribe(
       (result: AzureResponse) => {
