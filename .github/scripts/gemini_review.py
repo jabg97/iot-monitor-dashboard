@@ -52,19 +52,32 @@ una code review real antes de mergear a producción. Evalúa los siguientes aspe
    - Si el cambio es puramente de estilos (CSS/SCSS), textos en plantillas HTML o configuración menor, \
 sé tolerante y no bloquees el PR salvo que haya un problema real.
 
+6. **Evaluación de complejidad e impacto** *(criterio para el veredicto final)*
+   Antes de emitir el veredicto, evalúa la magnitud del cambio:
+   - **Cambio simple o aislado** (un componente pequeño, un modelo, un pipe, CSS): decide directamente \
+→ APROBADO si está bien, o RECHAZADO si tiene errores claros.
+   - **Cambio moderado** (un servicio con lógica de negocio, refactor de un módulo): emite COMENTARIO \
+con sugerencias puntuales si no hay bloqueantes.
+   - **Cambio extenso o de alto impacto** (modifica flujos críticos como autenticación, comunicación con \
+dispositivos IoT, rutas principales, lógica de estado global, o toca más de 10 archivos con cambios \
+sustanciales): emite REVISION_HUMANA aunque no detectes errores evidentes. Explica por qué la \
+complejidad supera lo que un análisis estático puede garantizar con seguridad.
+
 ---
 Formatea tu respuesta usando Markdown con secciones claras por categoría. \
 Si no encuentras problemas en una categoría, indícalo brevemente. \
 Sé directo, conciso y accionable: indica el archivo y línea si es posible.
 
-Al final de tu respuesta, en una línea separada, DEBES incluir obligatoriamente uno de estos tres veredictos:
-[VEREDICTO: APROBADO] → El código es correcto y seguro, se puede mergear.
-[VEREDICTO: RECHAZADO] → Hay problemas críticos de seguridad, bugs o malas prácticas graves.
-[VEREDICTO: COMENTARIO] → Hay sugerencias de mejora pero ningún bloqueante crítico.
+Al final de tu respuesta, en una línea separada, DEBES incluir obligatoriamente uno de estos cuatro veredictos:
+[VEREDICTO: APROBADO] → Cambio simple/moderado, correcto y seguro, se puede mergear sin intervención humana.
+[VEREDICTO: RECHAZADO] → Hay problemas críticos de seguridad, bugs evidentes o malas prácticas graves.
+[VEREDICTO: COMENTARIO] → Hay sugerencias de mejora menores pero ningún bloqueante crítico.
+[VEREDICTO: REVISION_HUMANA] → El cambio es demasiado extenso o complejo para garantizar su corrección \
+solo con análisis estático. Se requiere revisión manual por parte de un desarrollador.
 """
 
 VERDICT_PATTERN = re.compile(
-    r"\[VEREDICTO:\s*(APROBADO|RECHAZADO|COMENTARIO)\]",
+    r"\[VEREDICTO:\s*(APROBADO|RECHAZADO|COMENTARIO|REVISION_HUMANA)\]",
     re.IGNORECASE,
 )
 
@@ -72,6 +85,7 @@ VERDICT_TO_EVENT = {
     "APROBADO": "APPROVE",
     "RECHAZADO": "REQUEST_CHANGES",
     "COMENTARIO": "COMMENT",
+    "REVISION_HUMANA": "COMMENT",  # GitHub API only supports APPROVE/REQUEST_CHANGES/COMMENT
 }
 
 GITHUB_API = "https://api.github.com"
@@ -261,12 +275,24 @@ def main() -> None:
     print(f"[INFO] Verdict: {verdict_key} → GitHub event: {github_event}")
 
     # -- Build the final review body with a header ---------------------------
-    verdict_emoji = {"APPROVE": "✅", "REQUEST_CHANGES": "❌", "COMMENT": "💬"}.get(
-        github_event, "💬"
+    # For REVISION_HUMANA we use a distinct emoji and banner regardless of GitHub event
+    is_human_review = verdict_key == "REVISION_HUMANA"
+    verdict_emoji = (
+        "🔍"
+        if is_human_review
+        else {"APPROVE": "✅", "REQUEST_CHANGES": "❌", "COMMENT": "💬"}.get(github_event, "💬")
+    )
+    human_review_banner = (
+        "\n\n> ⚠️ **Se requiere revisión humana.** Este PR involucra cambios extensos o de alta "
+        "complejidad que superan lo que el análisis estático puede garantizar. "
+        "Por favor, asigna un revisor manualmente.\n"
+        if is_human_review
+        else ""
     )
     final_body = (
         f"## {verdict_emoji} Gemini AI Code Review\n\n"
-        f"{review_body}\n\n"
+        f"{review_body}"
+        f"{human_review_banner}\n\n"
         f"---\n"
         f"*Revisión automatizada generada por [Gemini 1.5 Flash](https://deepmind.google/technologies/gemini/).*"
     )
