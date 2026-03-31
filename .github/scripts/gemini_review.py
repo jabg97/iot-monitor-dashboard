@@ -9,7 +9,8 @@ import os
 import re
 import sys
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import requests
 
 # ---------------------------------------------------------------------------
@@ -158,25 +159,26 @@ def fetch_pr_diff(repo: str, pr_number: int, token: str) -> str:
 
 
 def analyze_diff_with_gemini(diff: str, api_key: str) -> str:
-    """Send the diff to Gemini 1.5 Flash and return the model's response."""
-    genai.configure(api_key=api_key)
-
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
-        system_instruction=SYSTEM_PROMPT,
-    )
+    """Send the diff to Gemini 1.5 Flash using the modern google.genai Client."""
+    client = genai.Client(api_key=api_key)
 
     prompt = f"A continuación está el diff del Pull Request para que lo analices:\n\n```diff\n{diff}\n```"
 
-    response = model.generate_content(
-        prompt,
-        generation_config=genai.types.GenerationConfig(
-            temperature=0.2,
-            max_output_tokens=4096,
-        ),
-    )
+    try:
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                temperature=0.2,
+                max_output_tokens=4096,
+            )
+        )
+    except Exception as e:
+        print(f"[ERROR] Gemini API call failed: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    if not response.text:
+    if not response or not response.text:
         print("[ERROR] Gemini returned an empty response.", file=sys.stderr)
         sys.exit(1)
 
