@@ -18,6 +18,9 @@ export class DashboardComponent implements OnInit {
 
   devices: Array<Device> = [];
   currentDevice?: Device;
+  dashboardStats: any = {};
+  alertDevices: any[] = [];
+  lastSync: string = '';
 
   ticks: Object = {
     offset: 5,
@@ -54,9 +57,54 @@ export class DashboardComponent implements OnInit {
   constructor(private azureService: AzureService) {}
 
   ngOnInit(): void {
+    this.loadDashboardData();
+  }
+
+  loadDashboardData(): void {
     this.azureService.getDevicesByuser().subscribe(
       (result: Array<Device>) => {
         this.devices = result;
+
+        let activeCount = 0;
+        let inactiveCount = 0;
+        let alertCount = 0;
+        const alerts: any[] = [];
+        const statsMap: any = {};
+
+        for (let i = 0; i < result.length; i++) {
+          const device = result[i];
+          const key = device.id;
+
+          if ((device as any).status === 'active') {
+            activeCount++;
+            statsMap[key] = { status: 'active', name: device.name };
+          } else {
+            inactiveCount++;
+            statsMap[key] = { status: 'inactive', name: device.name };
+          }
+
+          if ((device as any).alert === true) {
+            alertCount++;
+            alerts.push({ id: device.id, name: device.name, level: (device as any).alertLevel || 'unknown' });
+          }
+        }
+
+        this.dashboardStats = {
+          total: result.length,
+          active: activeCount,
+          inactive: inactiveCount,
+          alerts: alertCount,
+          map: statsMap,
+        };
+
+        this.alertDevices = alerts;
+        this.lastSync = new Date().toISOString();
+
+        localStorage.setItem('dashboard-stats', JSON.stringify(this.dashboardStats));
+        localStorage.setItem('dashboard-alerts', JSON.stringify(this.alertDevices));
+        localStorage.setItem('dashboard-last-sync', this.lastSync);
+
+        console.log('Dashboard loaded', this.dashboardStats);
       },
       (error: any) => {
         console.error(error);
@@ -88,6 +136,5 @@ export class DashboardComponent implements OnInit {
 
   load(args: ILoadedEventArgs): void {
     args.gauge.theme = <GaugeTheme>`Material${this.colorScheme}`;
-    // custom code end
   }
 }
