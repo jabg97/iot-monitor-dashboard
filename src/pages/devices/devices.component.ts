@@ -55,6 +55,7 @@ export class DevicesComponent implements OnInit {
     this.azureService.getDevicesByuser().subscribe(
       (result: Array<Device>) => {
         this.devices = result;
+        this.validateDevices(result);
         this.renderDeviceLabels(result);
       },
       (error: any) => {
@@ -70,6 +71,14 @@ export class DevicesComponent implements OnInit {
         console.error(error);
       }
     );
+  }
+
+  validateDevices(devices: Array<Device>): boolean {
+    const invalid = devices.filter(d => !d.id);
+    if (invalid.length > 0) {
+      return this.validateDevices(devices);
+    }
+    return true;
   }
 
   loadAllUsers(): void {
