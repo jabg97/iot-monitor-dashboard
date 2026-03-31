@@ -1,105 +1,112 @@
 """
 Gemini AI Code Review Script
-Fetches the diff of a GitHub Pull Request and submits an official
-GitHub review based on Gemini 1.5 Flash's analysis.
+Analiza diffs de PRs con gemini-2.5-flash o gemini-2.5-pro.
+Requiere: pip install google-genai requests
 """
 
 import json
 import os
 import re
 import sys
-
-import google.generativeai as genai
 import requests
 
+from google import genai as _genai
+from google.genai import types as _gtypes
+
 # ---------------------------------------------------------------------------
-# Constants
+# Prompt y patrones
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """Eres un Senior Engineer especializado en Angular (v14+) y TypeScript. \
-Tu misión es hacer una revisión exhaustiva del diff que se te proporciona, actuando como si fuera \
-una code review real antes de mergear a producción. Evalúa los siguientes aspectos en orden de prioridad:
+SYSTEM_PROMPT = """Eres un Senior Full-Stack Engineer experto en Angular (v14+) y TypeScript.
+Tu misión es revisar el diff proporcionado y clasificarlo en exactamente uno de estos 4 veredictos.
+Lee todos los criterios antes de decidir. Aplica siempre el veredicto de mayor gravedad que encuentres.
 
-1. **Seguridad**
-   - Detecta vulnerabilidades conocidas en dependencias nuevas o actualizadas en package.json/package-lock.json \
-(busca versiones con CVEs públicos o rangos demasiado abiertos como `*` o `>=0.0.0`).
-   - Identifica XSS potencial: uso de `innerHTML`, `bypassSecurityTrust*`, o `[innerHTML]` sin sanitizar.
-   - Detecta secretos, API keys o tokens hardcodeados.
-   - Señala uso inseguro de `localStorage`/`sessionStorage` con datos sensibles.
+════════════════════════════════════════════════════════
+VEREDICTO: CORREGIDO  →  bloquea el PR + genera el código corregido automáticamente
+════════════════════════════════════════════════════════
+Úsalo SOLO cuando el problema está contenido en los archivos del diff y puedes reescribirlos
+correctamente sin necesidad de conocer el resto del proyecto. Casos:
 
-2. **Buenas prácticas de Angular**
-   - Verifica que los componentes usen `OnPush` Change Detection cuando sea posible.
-   - Detecta subscripciones a Observables sin `takeUntil`, `async pipe`, o `takeUntilDestroyed` (memory leaks).
-   - Revisa que los módulos no sean innecesariamente grandes (considera lazy loading).
-   - Evalúa si se usa correctamente la inyección de dependencias (`inject()` vs constructor) de forma consistente.
-   - Detecta lógica de negocio en componentes que debería estar en servicios.
-   - Verifica el uso correcto de `TrackBy` en `*ngFor` para evitar re-renders innecesarios.
+  • Bug que rompe funcionalidad en runtime (null pointer, condición invertida, lógica errónea)
+  • Vulnerabilidad de seguridad (XSS, inyección HTML/SQL/JS, datos sensibles en logs o templates,
+    CSRF, tokens expuestos en frontend)
+  • Memory leak por suscripción Observable sin takeUntil, sin unsubscribe o sin async pipe,
+    cuando el patrón correcto es visible en el propio diff
+  • Breaking change de interfaz, @Input/@Output o contrato de servicio sin retrocompatibilidad
+  • Llamada a API con parámetros incorrectos que causaría error en producción
+  • Bucle infinito o condición de carrera evidente
 
-3. **Calidad TypeScript**
-   - Penaliza el uso de `any` explícito donde se puede inferir o definir un tipo concreto.
-   - Detecta type assertions forzadas (`as SomeType`) que ocultan errores potenciales.
-   - Señala funciones demasiado largas (más de ~40 líneas) que deberían descomponerse.
-   - Identifica lógica duplicada o código que puede simplificarse con operadores RxJS, \
-`optional chaining` (`?.`), `nullish coalescing` (`??`) o utilidades de TypeScript.
-   - Detecta `console.log` o código de debug olvidado.
+  FORMATO: explica el problema brevemente y proporciona el archivo completo corregido:
 
-4. **Rendimiento**
-   - Detecta llamadas HTTP innecesarias dentro de bucles o sin debounce en inputs.
-   - Señala importaciones de módulos completos cuando solo se necesita un subconjunto (tree-shaking).
-   - Identifica Pipes impuras donde debería usarse una pura.
+  <file path="ruta/exacta/segun/el/diff.ts">
+  // código completo corregido
+  </file>
 
-5. **Tolerancia contextual**
-   - Si el cambio es puramente de estilos (CSS/SCSS), textos en plantillas HTML o configuración menor, \
-sé tolerante y no bloquees el PR salvo que haya un problema real.
+════════════════════════════════════════════════════════
+VEREDICTO: ESTRUCTURAL  →  bloquea el PR + explica qué refactorizar (sin generar código)
+════════════════════════════════════════════════════════
+Úsalo cuando el problema requiere conocer archivos fuera del diff para corregirlo bien.
+Generar código aquí sería arriesgado porque podrías inventar imports o rutas incorrectas. Casos:
 
-6. **Evaluación de complejidad e impacto** *(criterio para el veredicto final)*
-   Antes de emitir el veredicto, evalúa la magnitud del cambio:
-   - **Cambio simple o aislado** (un componente pequeño, un modelo, un pipe, CSS): decide directamente \
-→ APROBADO si está bien, o RECHAZADO si tiene errores claros.
-   - **Cambio moderado** (un servicio con lógica de negocio, refactor de un módulo): emite COMENTARIO \
-con sugerencias puntuales si no hay bloqueantes.
-   - **Cambio extenso o de alto impacto** (modifica flujos críticos como autenticación, comunicación con \
-dispositivos IoT, rutas principales, lógica de estado global, o toca más de 10 archivos con cambios \
-sustanciales): emite REVISION_HUMANA aunque no detectes errores evidentes. Explica por qué la \
-complejidad supera lo que un análisis estático puede garantizar con seguridad.
+  • Función o método copiado/pegado que ya existe en otro lugar del proyecto
+    (ves la duplicación en el diff pero el original está en otro archivo)
+  • Función con más de 50 líneas que mezcla responsabilidades y debe extraerse
+  • Componente con más de 300 líneas que debe dividirse en componentes hijos
+  • Lógica de negocio compleja dentro del componente que debería vivir en un servicio
+  • Importación del módulo completo cuando solo se usa una parte
+    (ej: import * as _ from 'lodash' o import { everything } from '@angular/core')
 
----
-Formatea tu respuesta usando Markdown con secciones claras por categoría. \
-Si no encuentras problemas en una categoría, indícalo brevemente. \
-Sé directo, conciso y accionable: indica el archivo y línea si es posible.
+  FORMATO: para cada problema indica exactamente —
+  - Qué archivo y función/clase tiene el problema
+  - Por qué es un problema (una línea)
+  - Qué debe hacerse concretamente (pasos numerados, sin inventar código externo)
 
-Al final de tu respuesta, en una línea separada, DEBES incluir obligatoriamente uno de estos cuatro veredictos:
-[VEREDICTO: APROBADO] → Cambio simple/moderado, correcto y seguro, se puede mergear sin intervención humana.
-[VEREDICTO: RECHAZADO] → Hay problemas críticos de seguridad, bugs evidentes o malas prácticas graves.
-[VEREDICTO: COMENTARIO] → Hay sugerencias de mejora menores pero ningún bloqueante crítico.
-[VEREDICTO: REVISION_HUMANA] → El cambio es demasiado extenso o complejo para garantizar su corrección \
-solo con análisis estático. Se requiere revisión manual por parte de un desarrollador.
+════════════════════════════════════════════════════════
+VEREDICTO: COMENTAR  →  no bloquea + avisa de mejoras recomendadas
+════════════════════════════════════════════════════════
+Úsalo cuando hay cosas que mejorar pero el código funciona y puede mergearse. Casos:
+
+  • Uso de 'any' en TypeScript sin justificación (cuando el tipo correcto es obvio)
+  • *ngFor sin trackBy en listas que pueden cambiar
+  • Componente que se beneficiaría de ChangeDetectionStrategy.OnPush
+  • Nombre de variable o función que no expresa su intención
+  • Comentario desactualizado o que explica el "qué" en lugar del "por qué"
+
+  FORMATO: lista cada punto con archivo, línea aproximada y sugerencia concreta.
+
+════════════════════════════════════════════════════════
+VEREDICTO: APROBADO  →  aprueba el PR
+════════════════════════════════════════════════════════
+Úsalo cuando no hay ningún problema de los grupos anteriores.
+Si ves pequeñas mejoras de estilo o legibilidad, inclúyelas como sugerencias opcionales
+antes del veredicto, pero aprueba igualmente.
+
+════════════════════════════════════════════════════════
+REGLA FINAL: incluye [VEREDICTO: X] en la última línea de tu respuesta.
+Si hay problemas de distintos grupos, aplica el de mayor gravedad:
+CORREGIDO > ESTRUCTURAL > COMENTAR > APROBADO
+════════════════════════════════════════════════════════
 """
 
-VERDICT_PATTERN = re.compile(
-    r"\[VEREDICTO:\s*(APROBADO|RECHAZADO|COMENTARIO|REVISION_HUMANA)\]",
-    re.IGNORECASE,
-)
-
-VERDICT_TO_EVENT = {
-    "APROBADO": "APPROVE",
-    "RECHAZADO": "REQUEST_CHANGES",
-    "COMENTARIO": "COMMENT",
-    "REVISION_HUMANA": "COMMENT",  # GitHub API only supports APPROVE/REQUEST_CHANGES/COMMENT
-}
+VERDICT_RE = re.compile(r"\[VEREDICTO:\s*(APROBADO|COMENTAR|ESTRUCTURAL|CORREGIDO)\]", re.IGNORECASE)
+FILE_RE = re.compile(r'<file path="([^"]+)">\s*(.*?)\s*</file>', re.DOTALL)
 
 GITHUB_API = "https://api.github.com"
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# Precios por millón de tokens (verificar en ai.google.dev/pricing)
+MODEL_PRICING = {
+    "gemini-2.5-flash": {"input": 0.075, "output": 0.30},
+    "gemini-2.5-pro":   {"input": 1.25,  "output": 10.00},
+}
 
+# ---------------------------------------------------------------------------
+# Utilidades
+# ---------------------------------------------------------------------------
 
 def get_env(name: str) -> str:
-    """Return a required environment variable or exit with an error."""
     value = os.environ.get(name, "").strip()
     if not value:
-        print(f"[ERROR] Missing required environment variable: {name}", file=sys.stderr)
+        print(f"[ERROR] Falta variable de entorno: {name}", file=sys.stderr)
         sys.exit(1)
     return value
 
@@ -112,194 +119,181 @@ def github_headers(token: str) -> dict:
     }
 
 
-def resolve_pull_number(event_name: str, event: dict) -> int:
-    """
-    Resolve the PR number from the GitHub event payload.
-    Handles both pull_request / pull_request_target events and issue_comment events.
-    """
+def resolve_pr_number(event_name: str, event: dict) -> int:
+    # PR_NUMBER env var tiene prioridad (viene del paso ctx del workflow)
+    pr_env = os.environ.get("PR_NUMBER", "").strip()
+    if pr_env:
+        return int(pr_env)
     if event_name in ("pull_request", "pull_request_target"):
-        pr_number = event.get("pull_request", {}).get("number")
-        if pr_number:
-            return int(pr_number)
-
-    if event_name == "issue_comment":
-        # The PR number lives under event.issue.number when the comment is on a PR
-        pr_number = event.get("issue", {}).get("number")
-        if pr_number:
-            return int(pr_number)
-
-    print(
-        f"[ERROR] Could not resolve PR number from event '{event_name}'.",
-        file=sys.stderr,
-    )
+        return int(event["pull_request"]["number"])
+    print(f"[ERROR] No se pudo obtener PR number para evento: {event_name}", file=sys.stderr)
     sys.exit(1)
 
 
 def fetch_pr_diff(repo: str, pr_number: int, token: str) -> str:
-    """Fetch the unified diff of a Pull Request via the GitHub API."""
     url = f"{GITHUB_API}/repos/{repo}/pulls/{pr_number}"
     headers = github_headers(token)
     headers["Accept"] = "application/vnd.github.v3.diff"
-
-    response = requests.get(url, headers=headers, timeout=30)
-    if response.status_code != 200:
-        print(
-            f"[ERROR] Failed to fetch PR diff: {response.status_code} {response.text}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    diff = response.text.strip()
-    if not diff:
-        print("[WARN] PR diff is empty. Nothing to review.")
-        sys.exit(0)
-
-    return diff
+    resp = requests.get(url, headers=headers, timeout=30)
+    resp.raise_for_status()
+    return resp.text.strip()
 
 
-def analyze_diff_with_gemini(diff: str, api_key: str) -> str:
-    """Send the diff to Gemini 1.5 Flash and return the model's response."""
-    genai.configure(api_key=api_key)
-
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
-        system_instruction=SYSTEM_PROMPT,
-    )
-
-    prompt = f"A continuación está el diff del Pull Request para que lo analices:\n\n```diff\n{diff}\n```"
-
-    response = model.generate_content(
-        prompt,
-        generation_config=genai.types.GenerationConfig(
+def call_gemini(prompt: str, api_key: str, model_name: str):
+    client = _genai.Client(api_key=api_key)
+    return client.models.generate_content(
+        model=f"models/{model_name}",
+        contents=prompt,
+        config=_gtypes.GenerateContentConfig(
             temperature=0.2,
-            max_output_tokens=4096,
+            max_output_tokens=8192,
         ),
     )
 
-    if not response.text:
-        print("[ERROR] Gemini returned an empty response.", file=sys.stderr)
-        sys.exit(1)
 
-    return response.text
-
-
-def parse_verdict(gemini_text: str) -> tuple[str, str]:
-    """
-    Extract the verdict label from Gemini's response.
-    Returns (verdict_key, body_without_verdict_line).
-    """
-    match = VERDICT_PATTERN.search(gemini_text)
-    if not match:
-        # Default to COMMENT when no structured verdict is found
-        print("[WARN] No structured verdict found in Gemini response; defaulting to COMENTARIO.")
-        return "COMENTARIO", gemini_text.strip()
-
-    verdict_key = match.group(1).upper()
-    # Remove the verdict line from the body shown as the PR review body
-    body = VERDICT_PATTERN.sub("", gemini_text).strip()
-    return verdict_key, body
+def get_token_counts(response) -> tuple:
+    meta = getattr(response, "usage_metadata", None)
+    if meta is None:
+        return 0, 0
+    in_t = int(getattr(meta, "prompt_token_count", 0) or 0)
+    out_t = getattr(meta, "candidates_token_count", None)
+    if out_t is None:
+        total = int(getattr(meta, "total_token_count", 0) or 0)
+        out_t = max(0, total - in_t)
+    return in_t, int(out_t)
 
 
-def submit_github_review(
-    repo: str,
-    pr_number: int,
-    token: str,
-    event: str,
-    body: str,
-) -> None:
-    """Post an official GitHub review to the Pull Request."""
+def post_github_comment(repo: str, pr_number: int, token: str, event: str, body: str) -> None:
     url = f"{GITHUB_API}/repos/{repo}/pulls/{pr_number}/reviews"
-
-    payload = {
-        "body": body,
-        "event": event,
-    }
-
-    response = requests.post(
-        url,
-        headers=github_headers(token),
-        json=payload,
-        timeout=30,
+    resp = requests.post(
+        url, headers=github_headers(token),
+        json={"body": body, "event": event}, timeout=30,
     )
+    resp.raise_for_status()
 
-    if response.status_code not in (200, 201):
-        print(
-            f"[ERROR] Failed to submit GitHub review: {response.status_code} {response.text}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
 
-    review_data = response.json()
-    review_id = review_data.get("id", "unknown")
-    print(f"[OK] GitHub review submitted successfully (id={review_id}, event={event}).")
+def save_corrected_files(raw: str) -> bool:
+    matches = FILE_RE.findall(raw)
+    if not matches:
+        return False
+    for file_path, content in matches:
+        dir_name = os.path.dirname(file_path)
+        if dir_name:
+            os.makedirs(dir_name, exist_ok=True)
+        with open(file_path, "w", encoding="utf-8") as fh:
+            fh.write(content)
+        print(f"[INFO] Corregido: {file_path}", file=sys.stderr)
+    return True
 
+
+def write_github_output(key: str, value: str) -> None:
+    output_file = os.environ.get("GITHUB_OUTPUT", "")
+    if output_file:
+        with open(output_file, "a", encoding="utf-8") as fh:
+            fh.write(f"{key}={value}\n")
 
 # ---------------------------------------------------------------------------
-# Entry point
+# Main
 # ---------------------------------------------------------------------------
-
 
 def main() -> None:
-    # -- Read environment variables ------------------------------------------
-    gemini_api_key = get_env("GEMINI_API_KEY")
-    github_token = get_env("GITHUB_TOKEN")
+    gemini_key = get_env("GEMINI_API_KEY")
+    gh_token   = get_env("GITHUB_TOKEN")
     event_name = get_env("GITHUB_EVENT_NAME")
     repository = get_env("GITHUB_REPOSITORY")
-    event_path = get_env("GITHUB_EVENT_PATH")
+    model_name = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip()
 
-    # -- Load the GitHub event payload ----------------------------------------
+    with open(get_env("GITHUB_EVENT_PATH"), encoding="utf-8") as fh:
+        event_payload = json.load(fh)
+
+    pr_num = resolve_pr_number(event_name, event_payload)
+    print(f"[INFO] Revisando PR #{pr_num} con {model_name}", file=sys.stderr)
+
+    diff = fetch_pr_diff(repository, pr_num, gh_token)
+    if not diff:
+        print("[WARN] Diff vacío. Sin cambios que revisar.", file=sys.stderr)
+        write_github_output("verdict", "APROBADO")
+        return
+
+    prompt = f"{SYSTEM_PROMPT}\n\nAnaliza y corrige este diff:\n\n```diff\n{diff}\n```"
+
+    print(f"[INFO] Consultando {model_name}...", file=sys.stderr)
     try:
-        with open(event_path, encoding="utf-8") as fh:
-            event_payload = json.load(fh)
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"[ERROR] Could not read event payload from {event_path}: {exc}", file=sys.stderr)
+        response = call_gemini(prompt, gemini_key, model_name)
+    except Exception as exc:
+        print(f"[ERROR] Fallo en la API de Gemini: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    # -- Resolve PR number ----------------------------------------------------
-    pr_number = resolve_pull_number(event_name, event_payload)
-    print(f"[INFO] Reviewing PR #{pr_number} in {repository} (trigger: {event_name})")
+    raw = response.text
 
-    # -- Fetch the diff -------------------------------------------------------
-    print("[INFO] Fetching PR diff from GitHub API...")
-    diff = fetch_pr_diff(repository, pr_number, github_token)
-    print(f"[INFO] Diff fetched ({len(diff)} characters).")
-
-    # -- Analyse with Gemini --------------------------------------------------
-    print("[INFO] Sending diff to Gemini 1.5 Flash for analysis...")
-    gemini_response = analyze_diff_with_gemini(diff, gemini_api_key)
-    print("[INFO] Gemini analysis complete.")
-
-    # -- Parse verdict --------------------------------------------------------
-    verdict_key, review_body = parse_verdict(gemini_response)
-    github_event = VERDICT_TO_EVENT.get(verdict_key, "COMMENT")
-    print(f"[INFO] Verdict: {verdict_key} → GitHub event: {github_event}")
-
-    # -- Build the final review body with a header ---------------------------
-    # For REVISION_HUMANA we use a distinct emoji and banner regardless of GitHub event
-    is_human_review = verdict_key == "REVISION_HUMANA"
-    verdict_emoji = (
-        "🔍"
-        if is_human_review
-        else {"APPROVE": "✅", "REQUEST_CHANGES": "❌", "COMMENT": "💬"}.get(github_event, "💬")
-    )
-    human_review_banner = (
-        "\n\n> ⚠️ **Se requiere revisión humana.** Este PR involucra cambios extensos o de alta "
-        "complejidad que superan lo que el análisis estático puede garantizar. "
-        "Por favor, asigna un revisor manualmente.\n"
-        if is_human_review
-        else ""
-    )
-    final_body = (
-        f"## {verdict_emoji} Gemini AI Code Review\n\n"
-        f"{review_body}"
-        f"{human_review_banner}\n\n"
-        f"---\n"
-        f"*Revisión automatizada generada por [Gemini 1.5 Flash](https://deepmind.google/technologies/gemini/).*"
+    # Costo estimado
+    pricing = MODEL_PRICING.get(model_name, {"input": 0.0, "output": 0.0})
+    in_tok, out_tok = get_token_counts(response)
+    cost = (in_tok * pricing["input"] + out_tok * pricing["output"]) / 1_000_000
+    print(
+        f"[INFO] Tokens — input: {in_tok}, output: {out_tok} | "
+        f"Costo estimado: ${cost:.6f} USD ({model_name})",
+        file=sys.stderr,
     )
 
-    # -- Submit GitHub review -------------------------------------------------
-    print("[INFO] Submitting official GitHub review...")
-    submit_github_review(repository, pr_number, github_token, github_event, final_body)
+    # Extraer veredicto
+    match = VERDICT_RE.search(raw)
+    verdict = match.group(1).upper() if match else "APROBADO"
+
+    # Texto limpio (sin bloques <file> ni veredicto)
+    clean = VERDICT_RE.sub("", raw)
+    clean = FILE_RE.sub("", clean).strip()
+
+    if verdict == "CORREGIDO":
+        saved = save_corrected_files(raw)
+        if saved:
+            body = (
+                f"## 🛠️ Correcciones automáticas — {model_name}\n\n"
+                "Se han detectado problemas críticos. **PR bloqueado.**\n"
+                "Se abrirá un PR automático con los cambios corregidos. Revísalo antes de mergear.\n\n"
+                f"### Análisis:\n{clean}"
+            )
+            post_github_comment(repository, pr_num, gh_token, "REQUEST_CHANGES", body)
+            print("[OK] Archivos corregidos. PR bloqueado. Actions creará el PR de fixes.", file=sys.stderr)
+        else:
+            print("[WARN] Veredicto CORREGIDO pero sin bloques <file>. Bloqueando igualmente.", file=sys.stderr)
+            body = (
+                f"## 🚨 Problemas críticos detectados — {model_name}\n\n"
+                "**PR bloqueado.** Se detectaron problemas críticos pero no fue posible "
+                "generar la corrección automática. Corrige manualmente antes de mergear.\n\n"
+                f"### Detalles:\n{clean}"
+            )
+            post_github_comment(repository, pr_num, gh_token, "REQUEST_CHANGES", body)
+
+    elif verdict == "ESTRUCTURAL":
+        body = (
+            f"## 🏗️ Problemas estructurales — {model_name}\n\n"
+            "**PR bloqueado.** El código necesita refactorización antes de mergearse. "
+            "Los cambios requeridos implican partes del proyecto fuera de este diff, "
+            "por lo que deben aplicarse manualmente.\n\n"
+            f"### Qué hay que hacer:\n{clean}"
+        )
+        post_github_comment(repository, pr_num, gh_token, "REQUEST_CHANGES", body)
+        print("[OK] PR bloqueado por problemas estructurales.", file=sys.stderr)
+
+    elif verdict == "COMENTAR":
+        body = f"## 💬 Sugerencias de mejora — {model_name}\n\nEl PR puede mergearse. Considera estos puntos:\n\n{clean}"
+        post_github_comment(repository, pr_num, gh_token, "COMMENT", body)
+        print("[OK] Comentarios enviados al PR.", file=sys.stderr)
+
+    else:  # APROBADO
+        if clean:
+            body = (
+                f"## ✅ Aprobado — {model_name}\n\n"
+                f"El código está listo para mergear. Sugerencias opcionales:\n\n{clean}"
+            )
+        else:
+            body = f"## ✅ Aprobado — {model_name}\n\nTodo correcto. No se requieren cambios."
+        post_github_comment(repository, pr_num, gh_token, "APPROVE", body)
+        print("[OK] PR aprobado.", file=sys.stderr)
+
+    write_github_output("verdict", verdict)
+    print(f"[RESULTADO] Veredicto final: {verdict}", file=sys.stderr)
 
 
 if __name__ == "__main__":
