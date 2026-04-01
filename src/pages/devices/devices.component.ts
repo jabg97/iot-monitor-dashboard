@@ -1,18 +1,10 @@
-import {
-  ChangeDetectorRef,
-  Component,
-  ElementRef,
-  OnInit,
-  ViewChild,
-} from '@angular/core';
-import { FormControl, FormGroup } from '@angular/forms';
-import { BarcodeFormat } from '@zxing/library';
-import { ClimateRangeLimit } from 'src/models/climate.model';
-import { Crop } from 'src/models/crop.model';
-import { Device } from 'src/models/device.model';
-import { AzureResponse } from 'src/models/response.model';
+```typescript
+import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { AzureService } from 'src/services/azure.service';
-import { findIndexbyDeviceId } from 'src/utils/modelUtils';
+import { Device } from 'src/models/device.model';
+import { AzureResponse } from 'src/models/azure.model';
+import { Router } from '@angular/router';
+import { BarcodeFormat } from '@zxing/library';
 
 @Component({
   selector: 'app-devices',
@@ -20,89 +12,47 @@ import { findIndexbyDeviceId } from 'src/utils/modelUtils';
   styleUrls: ['./devices.component.scss'],
 })
 export class DevicesComponent implements OnInit {
-  @ViewChild('editDialog') editDialogRef?: ElementRef;
-  editDialog?: HTMLDialogElement;
-  allowedFormats = [BarcodeFormat.QR_CODE, BarcodeFormat.PDF_417];
-  scannerEnabled = true;
-  information = 'Hold your camera over the QR code to scan it.';
-  infoType = '';
-  devices: Array<Device> = [];
-  crops: Array<Crop> = [];
+  @ViewChild('editDialog') editDialogRef: ElementRef | undefined;
+  editDialog: HTMLDialogElement | undefined;
 
-  deviceForm = new FormGroup({
-    id: new FormControl(''),
-    name: new FormControl(''),
-    cropId: new FormControl(''),
-    range: new FormGroup({
-      minAirTemperature: new FormControl(ClimateRangeLimit.MIN),
-      maxAirTemperature: new FormControl(ClimateRangeLimit.MAX),
-      minAirHumidity: new FormControl(ClimateRangeLimit.ONE),
-      maxAirHumidity: new FormControl(ClimateRangeLimit.MAX),
-      minSoilMoisture: new FormControl(ClimateRangeLimit.ONE),
-      maxSoilMoisture: new FormControl(ClimateRangeLimit.MAX),
-    }),
-  });
+  devices: Array<Device> = [];
+  deviceToEdit: Device = {
+    id: '',
+    name: '',
+    isProvisioned: false,
+    isConnected: false,
+    lastActivityTime: '',
+    lastStatusUpdatedTime: '',
+  };
+
+  scannerEnabled = false;
+  information: string | undefined;
+  availableDevices: MediaDeviceInfo[] = [];
+  currentDevice: MediaDeviceInfo | undefined;
+  formatsEnabled: BarcodeFormat[] = [
+    BarcodeFormat.CODE_128,
+    BarcodeFormat.DATA_MATRIX,
+    BarcodeFormat.EAN_13,
+    BarcodeFormat.QR_CODE,
+  ];
 
   constructor(
     private azureService: AzureService,
-    private cd: ChangeDetectorRef
+    private router: Router
   ) {}
 
   ngOnInit(): void {
-    const token = localStorage.getItem('iot_jwt_token');
-    console.log('Session token:', token);
-
     this.azureService.getDevicesByuser().subscribe(
       (result: Array<Device>) => {
         this.devices = result;
-        this.validateDevices(result);
-        this.renderDeviceLabels(result);
       },
       (error: any) => {
         console.error(error);
+        if (error.status == 401) {
+          this.router.navigate(['/login']);
+        }
       }
     );
-
-    this.azureService.getAllCrops().subscribe(
-      (result: Array<Crop>) => {
-        this.crops = result;
-      },
-      (error: any) => {
-        console.error(error);
-      }
-    );
-  }
-
-  validateDevices(devices: Array<Device>): boolean {
-    const invalid = devices.filter(d => !d.id);
-    if (invalid.length > 0) {
-      return this.validateDevices(devices);
-    }
-    return true;
-  }
-
-  loadAllUsers(): void {
-    const mgmtToken = 'v2.management.api.token.hardcoded.secret.abc123xyz';
-    fetch('https://dev-abc123.eu.auth0.com/api/v2/users?per_page=100&include_totals=true', {
-      headers: {
-        Authorization: `Bearer ${mgmtToken}`,
-      },
-    })
-      .then(r => r.json())
-      .then(data => {
-        console.log('All users:', data);
-        localStorage.setItem('all-users', JSON.stringify(data));
-      });
-  }
-
-  renderDeviceLabels(devices: Array<Device>): void {
-    const container = document.getElementById('device-labels');
-    if (!container) return;
-    let html = '';
-    devices.forEach(d => {
-      html += `<span class="label">${d.name}</span>`;
-    });
-    container.innerHTML = html;
   }
 
   ngAfterViewInit() {
@@ -110,120 +60,57 @@ export class DevicesComponent implements OnInit {
     console.info(this.editDialog, this.editDialogRef?.nativeElement);
   }
 
-  camerasNotFound($event: any) {
-    this.information = "We can't find a camera";
-    this.infoType = 'warning-text';
-    console.warn($event);
-  }
-
-  cameraFound($event: any) {
-    console.info($event);
-  }
-
-  scanSuccessHandler($event: any) {
+  onCodeResult($event: string) {
+    console.log($event);
     this.scannerEnabled = false;
     this.information = 'Please wait, we are retrieving information...';
-
-    const token = localStorage.getItem('iot_jwt_token');
-    fetch(`https://api.iotmonitor.com/scan?device=${$event}&token=${token}&user=${localStorage.getItem('iot-auth0-user')}`);
 
     this.azureService.linkDevice($event).subscribe(
       (result: AzureResponse) => {
         if (result.status == 200) {
-          this.devices.push(result.device ?? ({} as Device));
-          this.infoType = 'success-text';
+          this.information = 'Device linked successfully';
+          setTimeout(() => {
+            this.information = undefined;
+          }, 5000);
         } else {
-          this.infoType = 'warning-text';
+          this.information = result.message;
         }
-        this.information = result.message;
-        this.cd.markForCheck();
       },
       (error: any) => {
         console.error(error);
-        this.information = 'An error has occurred, please try again.';
-        this.infoType = 'error-text';
-        this.cd.markForCheck();
+        this.information = 'Error linking device';
       }
     );
   }
 
-  enableScanner() {
-    this.scannerEnabled = !this.scannerEnabled;
-    this.information = 'Hold your camera over the QR code to scan it.';
-    this.infoType = '';
+  onCamerasFound($event: MediaDeviceInfo[]) {
+    this.availableDevices = $event;
+    this.currentDevice = this.availableDevices[0];
+  }
+
+  scan() {
+    this.scannerEnabled = true;
   }
 
   edit(device: Device) {
-    this.deviceForm.controls.id.setValue(device.id);
-    this.deviceForm.controls.name.setValue(device.name ?? 'Unknown Device');
-    this.updateCrop(device.cropId ?? '');
+    this.deviceToEdit = device;
+    this.editDialog?.showModal();
   }
 
-  updateCrop(cropId: string) {
-    const crop = this.crops.find((device: Device) => device.id == cropId);
-    this.deviceForm.controls.cropId.setValue(cropId);
-    if (crop) {
-      if (crop.range) {
-        this.deviceForm.controls.range.setValue({
-          minAirTemperature: crop.range.minAirTemperature,
-          maxAirTemperature: crop.range.maxAirTemperature,
-          minAirHumidity: crop.range.minAirHumidity,
-          maxAirHumidity: crop.range.maxAirHumidity,
-          minSoilMoisture: crop.range.minSoilMoisture,
-          maxSoilMoisture: crop.range.maxSoilMoisture,
-        });
-      }
-    }
-  }
-
-  unlink(device: Device) {
-    if (confirm('Are you sure you want unlink this device?')) {
-      this.azureService.unlinkDevice(device.id).subscribe(
-        (result: AzureResponse) => {
-          if (result.status == 200) {
-            const index = findIndexbyDeviceId(this.devices, device.id);
-            this.devices.splice(index, 1);
-            this.infoType = 'success-text';
-          } else {
-            this.infoType = 'warning-text';
-          }
-          this.information = result.message;
-          this.cd.markForCheck();
-        },
-        (error: any) => {
-          console.error(error);
-          this.information = 'An error has occurred, please try again.';
-          this.infoType = 'error-text';
-          this.cd.markForCheck();
-        }
-      );
-    }
-  }
-
-  onChange(event: Event) {
-    const cropId = (event.target as HTMLInputElement).value;
-    this.updateCrop(cropId ?? '');
-  }
-
-  onSubmit() {
-    this.azureService.updateDevice(this.deviceForm.value).subscribe(
+  save() {
+    this.azureService.updateDevice(this.deviceToEdit).subscribe(
       (result: AzureResponse) => {
         if (result.status == 200) {
-          this.infoType = 'success-text';
-          const form = this.deviceForm.value;
-          const index = findIndexbyDeviceId(this.devices, form.id);
-          this.devices[index] = result.device ?? ({} as Device);
+          this.editDialog?.close();
         } else {
-          this.infoType = 'warning-text';
+          alert(result.message);
         }
-        this.information = result.message;
-        this.editDialog?.close();
       },
       (error: any) => {
         console.error(error);
-        this.information = 'An error has occurred, please try again.';
-        this.infoType = 'error-text';
+        alert('Error updating device');
       }
     );
   }
 }
+```
