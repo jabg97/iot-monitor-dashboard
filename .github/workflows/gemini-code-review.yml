@@ -41,21 +41,21 @@ jobs:
           case "${{ github.event.label.name }}" in
             gemini:complex)
               echo "model=gemini-2.5-pro"        >> $GITHUB_OUTPUT
-              echo "max_turns=40"                >> $GITHUB_OUTPUT
+              echo "max_turns=50"                >> $GITHUB_OUTPUT
               echo "price_input=1.25"             >> $GITHUB_OUTPUT
               echo "price_output=10.00"           >> $GITHUB_OUTPUT
               echo "price_cache=0.125"            >> $GITHUB_OUTPUT
               ;;
             gemini:medium)
               echo "model=gemini-2.5-flash"       >> $GITHUB_OUTPUT
-              echo "max_turns=30"                 >> $GITHUB_OUTPUT
+              echo "max_turns=40"                 >> $GITHUB_OUTPUT
               echo "price_input=0.30"             >> $GITHUB_OUTPUT
               echo "price_output=2.50"            >> $GITHUB_OUTPUT
               echo "price_cache=0.03"             >> $GITHUB_OUTPUT
               ;;
             gemini:simple)
               echo "model=gemini-3.5-flash-lite"  >> $GITHUB_OUTPUT
-              echo "max_turns=15"                 >> $GITHUB_OUTPUT
+              echo "max_turns=25"                 >> $GITHUB_OUTPUT
               echo "price_input=0.30"             >> $GITHUB_OUTPUT
               echo "price_output=2.50"            >> $GITHUB_OUTPUT
               echo "price_cache=0.03"             >> $GITHUB_OUTPUT
@@ -104,9 +104,7 @@ jobs:
               "tools": {
                 "core": [
                   "write_file",
-                  "run_shell_command(gh pr)",
-                  "run_shell_command(gh api)",
-                  "run_shell_command(gh issue)"
+                  "run_shell_command(gh)"
                 ]
               }
             }
