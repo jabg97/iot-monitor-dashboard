@@ -66,12 +66,14 @@ jobs:
   gemini:
     needs: resolve-model
     runs-on: ubuntu-latest
+    # Minimo necesario (recomendacion oficial de run-gemini-cli para inputs no
+    # confiables: https://github.com/google-github-actions/run-gemini-cli/blob/main/docs/trust-guidance.md):
+    # solo lee el repo, escribe comentarios/reviews en el PR. Nada de push,
+    # nada de OIDC (usamos API key, no WIF), nada de manage de Actions.
     permissions:
-      contents: write
+      contents: read
       pull-requests: write
       issues: write
-      id-token: write
-      actions: read
 
     steps:
       - uses: actions/checkout@v6
