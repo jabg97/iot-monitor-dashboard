@@ -4,33 +4,7 @@
     <button class="close-dialog" (click)="historyDialog.close()">X</button>
   </div>
   <div class="dialog-body">
-    <table *ngIf="currentDevice?.history?.length">
-      <caption>
-        {{
-          currentDevice?.history?.length ?? 0
-            | count : 'history record' : 'history records'
-        }}
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col">Date</th>
-          <th scope="col">State</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let row of currentDevice?.history">
-          <td>{{ row.dateTime | date : "short" : "+0000" }}</td>
-          <td class="td-column">
-            <small *ngFor="let state of row.state.split(' -:- ')" class="{{state.includes('Low') || state.includes('High') ? 'error-text': ''}}">
-              {{state}}
-            </small>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-    <p class="error-text" *ngIf="!currentDevice?.history?.length">
-      We can't find history records linked to this device.
-    </p>
+    <app-device-history [history]="currentDevice?.history ?? []"></app-device-history>
   </div>
 </dialog>
 <div class="row" *ngIf="!devices.length">

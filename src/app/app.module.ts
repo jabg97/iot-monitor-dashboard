@@ -15,6 +15,7 @@ import { DevicesComponent } from 'src/pages/devices/devices.component';
 import { DashboardComponent } from 'src/pages/dashboard/dashboard.component';
 import { NotFoundComponent } from 'src/pages/not-found/not-found.component';
 import { HeaderComponent } from 'src/components/header/header.component';
+import { DeviceHistoryComponent } from 'src/components/device-history/device-history.component';
 import { CircularGaugeModule } from '@syncfusion/ej2-angular-circulargauge';
 import { DeveloperComponent } from 'src/pages/developer/developer.component';
 import { CountPipe } from '../pipes/count/count.pipe';
@@ -28,6 +29,7 @@ import { QRCodeModule } from 'angularx-qrcode';
     DashboardComponent,
     NotFoundComponent,
     HeaderComponent,
+    DeviceHistoryComponent,
     CountPipe,
   ],
   imports: [

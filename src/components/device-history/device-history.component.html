@@ -1,0 +1,26 @@
+<table *ngIf="history.length; else emptyState" class="device-history">
+  <caption>
+    {{ history.length | count : 'history record' : 'history records' }}
+  </caption>
+  <thead>
+    <tr>
+      <th scope="col">Date</th>
+      <th scope="col">State</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr *ngFor="let entry of history; trackBy: trackByDateTime">
+      <td>{{ entry.dateTime | date : 'short' : '+0000' }}</td>
+      <td class="device-history__states">
+        <small
+          *ngFor="let state of splitState(entry.state)"
+          [class.error-text]="isOutOfRange(state)">
+          {{ state }}
+        </small>
+      </td>
+    </tr>
+  </tbody>
+</table>
+<ng-template #emptyState>
+  <p class="error-text">We can't find history records linked to this device.</p>
+</ng-template>
