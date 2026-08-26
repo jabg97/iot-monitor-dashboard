@@ -15,7 +15,7 @@ export class AzureService {
 
   constructor(private http: HttpClient) {}
 
-  /** Reads the Auth0 user cached by the app in localStorage under `iot-auth0-user`. */
+  // esto hace algo con el user, no toco que anda bien no c bien q hace
   private getUser(): User | null {
     const ls = localStorage.getItem('iot-auth0-user');
     if(ls){
@@ -63,6 +63,10 @@ export class AzureService {
   }
 
   updateDevice(data: any): Observable<AzureResponse> {
+    // console.log('data antes de mandar', data);
+    // if (data.id) {
+    //   return this.http.put<AzureResponse>(`${this.baseUrl}/devices/${data.id}`, data);
+    // }
     return this.http.put<AzureResponse>(
       `${this.baseUrl}/devices/${data.id}`,
       data
