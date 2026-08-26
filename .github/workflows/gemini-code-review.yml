@@ -1,0 +1,401 @@
+name: Gemini Code Review
+
+# Labels propias (gemini:*), independientes de review:* (Claude) para poder
+# correr ambos bots en paralelo sobre el mismo PR sin pisarse ni duplicar gasto.
+on:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: gemini-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Seleccionar modelo según label ──────────────────────────────────────────
+  resolve-model:
+    runs-on: ubuntu-latest
+    if: |
+      github.event.label.name == 'gemini:complex' ||
+      github.event.label.name == 'gemini:medium' ||
+      github.event.label.name == 'gemini:simple'
+    outputs:
+      model: ${{ steps.pick.outputs.model }}
+      max_turns: ${{ steps.pick.outputs.max_turns }}
+      price_input: ${{ steps.pick.outputs.price_input }}
+      price_output: ${{ steps.pick.outputs.price_output }}
+      price_cache: ${{ steps.pick.outputs.price_cache }}
+    steps:
+      # Precios oficiales por millón de tokens (USD, tier <=200k) —
+      # fuente: https://ai.google.dev/gemini-api/docs/pricing — revisar antes de
+      # confiar en esto para presupuesto real, Google los cambia sin aviso.
+      - name: Pick model by label
+        id: pick
+        run: |
+          case "${{ github.event.label.name }}" in
+            gemini:complex)
+              echo "model=gemini-2.5-pro"        >> $GITHUB_OUTPUT
+              echo "max_turns=40"                >> $GITHUB_OUTPUT
+              echo "price_input=1.25"             >> $GITHUB_OUTPUT
+              echo "price_output=10.00"           >> $GITHUB_OUTPUT
+              echo "price_cache=0.125"            >> $GITHUB_OUTPUT
+              ;;
+            gemini:medium)
+              echo "model=gemini-2.5-flash"       >> $GITHUB_OUTPUT
+              echo "max_turns=30"                 >> $GITHUB_OUTPUT
+              echo "price_input=0.30"             >> $GITHUB_OUTPUT
+              echo "price_output=2.50"            >> $GITHUB_OUTPUT
+              echo "price_cache=0.03"             >> $GITHUB_OUTPUT
+              ;;
+            gemini:simple)
+              echo "model=gemini-2.5-flash-lite"  >> $GITHUB_OUTPUT
+              echo "max_turns=15"                 >> $GITHUB_OUTPUT
+              echo "price_input=0.10"             >> $GITHUB_OUTPUT
+              echo "price_output=0.40"            >> $GITHUB_OUTPUT
+              echo "price_cache=0.01"             >> $GITHUB_OUTPUT
+              ;;
+          esac
+
+  # ── Ejecutar review ─────────────────────────────────────────────────────────
+  gemini:
+    needs: resolve-model
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Resolver PR number
+        id: resolve-pr
+        run: |
+          echo "number=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
+          echo "url=${{ github.event.pull_request.html_url }}" >> $GITHUB_OUTPUT
+
+      - name: Run Gemini Code Review
+        id: gemini
+        uses: google-github-actions/run-gemini-cli@v0
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          gemini_model: ${{ needs.resolve-model.outputs.model }}
+          github_pr_number: ${{ steps.resolve-pr.outputs.number }}
+          workflow_name: gemini-code-review
+          settings: |
+            {
+              "model": {
+                "maxSessionTurns": ${{ needs.resolve-model.outputs.max_turns }}
+              },
+              "tools": {
+                "core": [
+                  "write_file",
+                  "run_shell_command(gh pr)",
+                  "run_shell_command(gh api)",
+                  "run_shell_command(gh issue)"
+                ]
+              }
+            }
+
+          prompt: |
+            Act as a senior software engineer focused on robustness, security and performance.
+            Review Pull Request #${{ steps.resolve-pr.outputs.number }} (${{ steps.resolve-pr.outputs.url }})
+            and publish a review comment on the PR using the format described below, **written in
+            Latin American Spanish** (the format headers/labels below are illustrative — the actual
+            comment body you publish must be in Spanish).
+
+            You have shell access to the `gh` CLI only. Useful commands:
+            - `gh pr diff ${{ steps.resolve-pr.outputs.number }}` — full diff
+            - `gh pr view ${{ steps.resolve-pr.outputs.number }} --json files,additions,deletions,changedFiles`
+            - `gh api repos/${{ github.repository }}/pulls/${{ steps.resolve-pr.outputs.number }}/files`
+
+            ---
+
+            ## Review priorities
+
+            Analyze in this order of importance — spend the most depth on the first ones:
+
+            ### 🥇 Priority 1 — Border Cases
+            These matter the most. Actively look for:
+            - `null`, `undefined`, `0`, `""`, `NaN` inputs, empty arrays, empty objects
+            - Numeric overflows, division by zero, out-of-range indices
+            - Race conditions in async code (promises without await, race conditions)
+            - Unhandled `else` branches or `switch` cases
+            - Loops that may be infinite or never terminate
+            - Recursion without a base case or with an incorrect base case
+            - Negative or extreme values in expected ranges (negative prices, invalid dates, etc.)
+
+            ### 🥈 Priority 2 — Performance (Evident Impact)
+            - N+1 queries: API or DB calls inside loops. Default to 🟡 Warning. Only 🔴 Critical if the
+              input comes from a source with no observable fixed limit in the code (e.g. `findAll()`,
+              unpaginated queries, lists from a request without `limit`).
+            - O(n²) or worse operations: only flag if the iterated collection clearly comes from an API
+              or DB with no limit (same criterion as N+1). If the collection has a fixed or bounded size
+              in the code, mark it as 🔵 Suggestion.
+            - Serious memory leaks: RxJS subscriptions (`.subscribe(...)`) in a component or service that
+              are never torn down — no `async` pipe, no `takeUntil`/`takeUntilDestroyed`, no manual
+              `.unsubscribe()` in `ngOnDestroy`. On a component that gets created/destroyed repeatedly
+              (routed pages, items in an `*ngFor`, dialogs) this is 🔴 Critical; on a singleton
+              (`providedIn: 'root'`) it's 🟡 since it only leaks once per app lifetime.
+            - **Angular note:** Do not block (🔴) for missing `ChangeDetectionStrategy.OnPush` or a
+              missing `trackBy` on a small/static `*ngFor`. Treat those as 🔵 Suggestion unless the list
+              is clearly large/dynamic (rendered from an API response with no bound).
+            - Queries that fetch all columns/fields when only 2-3 are used, or missing pagination on
+              endpoints exposing potentially large collections.
+
+            ### 🥉 Priority 3 — Security
+            - **Route guards:** analyze new entries in the Angular router config.
+              - If a route renders **sensitive data** (device data, crops, anything scoped to the logged
+                user) and has no `canActivate`/`canMatch` guard (this repo uses `@auth0/auth0-angular`):
+                mark as 🟡 Warning asking for strong justification of why it's unguarded.
+              - If it's **harmless** (login, not-found, public landing): 🔵 Suggestion, just a confirmation
+                reminder.
+            - Unsanitized user input rendered via `[innerHTML]`, `bypassSecurityTrust*`, or template
+              interpolation of raw API/user-controlled strings (XSS)
+            - Use of `eval`, `Function()`, or direct DOM `innerHTML` assignment with external data
+            - Hardcoded secrets, tokens or credentials (check `environment.ts`/`environment.prod.ts` too,
+              not just services)
+            - Reading/writing auth tokens or user objects to `localStorage`/`sessionStorage` without
+              considering XSS exposure — flag as 🔵 Suggestion unless it's clearly sensitive (raw JWT),
+              then 🟡
+            - `HttpClient` calls without an error handler on the subscription (bare success callback) that
+              could silently swallow a failed request touching sensitive data
+            - Dependencies with known vulnerabilities introduced by the PR
+
+            ### Priority 4 — Quality, UX and Standards
+            - **Repo standards:** this is a standalone Angular CLI app (not an Nx monorepo) with SCSS per
+              component and no NgRx/state-management library — services are the source of truth. Verify:
+              - Naming (🟡): files in `kebab-case` with the Angular type suffix (`*.component.ts`,
+                `*.service.ts`, `*.pipe.ts`, `*.model.ts`), classes in `PascalCase`, component selectors
+                prefixed `app-`.
+              - RxJS / subscriptions (🟡, 🔴 if it's a routed/repeating component — see Priority 2): every
+                `.subscribe(...)` in a component needs a teardown path (`async` pipe in the template,
+                `takeUntil`/`takeUntilDestroyed`, or `ngOnDestroy` unsubscribe). Prefer the `async` pipe
+                over manual `subscribe()` + component field when the value only feeds the template.
+              - Architecture (🟡): HTTP/business logic lives in a service under `src/services`
+                (`@Injectable({ providedIn: 'root' })`), not inlined in a component. Components inject
+                services via the constructor and stay focused on view state; shared shapes live as
+                interfaces under `src/models`, not as inline object literals or `any`.
+              - Error handling (🟡): `HttpClient` subscriptions must handle the error channel
+                (`subscribe({ next, error })` or a `catchError` in the pipe) — a bare success-only
+                callback with just a `console.error` for the rest is not enough for anything user-facing.
+              - Styles (🔵): one root element per component template; keep selectors shallow — avoid deep
+                descendant selectors reaching into a child component's DOM from a parent's SCSS.
+              - Typing: do not allow `@ts-ignore` or `eslint-disable` (🔴 Critical). Avoid `as Type`
+                assertions when they can be replaced by Type Guards or `satisfies`. If the `as` is
+                avoidable, mark it as 🟡 Warning and **provide the exact fix example**. If the `as` is
+                unavoidable (e.g. mocks, external libraries), allow the merge without remarks. An explicit
+                `any` on a service method's parameter or return type (instead of the matching interface
+                from `src/models`) is 🟡 — provide the concrete interface fix.
+            - **UI/UX criterion:** if you detect a change in labels, counters or visual behavior that
+              looks intentional and the code is coherent, do NOT mark it as 🔴 Critical. If you believe
+              the UX is confusing, mark it as 🟡 Warning or 🔵 Suggestion asking the author to confirm
+              whether the change is intentional or an actual visual/logic bug.
+
+            ---
+
+            ## Comment structure
+
+            ### 1. Quality Scorecard 📊
+
+            Always start with the score, clearly visible:
+            - **Puntaje: [Puntos]/100** [Emoji by score: 🏆 (100), ✅ (80-99), ⚠️ (60-79), ❌ (<60)]
+            - **Veredicto:** [✅ Aprobado / ⚠️ Requiere cambios]
+
+            Write a 2-sentence summary of the PR and its overall quality. If the score is 100, add:
+            "¡PR de Excelencia! 🏅 Sigue así."
+
+            ---
+
+            ### 2. Issues table
+
+            | # | Severidad | Puntos | Archivo | Línea | Descripción corta |
+            |---|-----------|--------|---------|-------|-------------------|
+            | 1 | 🔴 Crítico | -50 | `src/Foo.tsx` | 42 | Naming ambiguo en shared |
+            | 2 | 🔵 Sugerencia | -5 | `src/Bar.tsx` | 18 | Falta JSDoc |
+            | 3 | ⚪ Opinión | 0 | `src/Utils.tsx` | 10 | Podría usar reduce en vez de map (Opcional) |
+
+            Severity levels:
+            - 🔴 **Crítico** — blocks the merge: security vulnerabilities, crash-causing errors (null
+              pointers, infinite loops), data loss or serious business-logic failures.
+            - 🟡 **Advertencia** — should be reviewed: bad practices, fragile code, missing tests or
+              inconsistent UX that doesn't block usage of the tool.
+            - 🔵 **Sugerencia** — optional improvement: readability, minor refactor, or **UI/UX decisions
+              that look intentional but could be confusing**. If you suspect a change is an intentional
+              product requirement, use this level to ask the developer to confirm the visual behavior is
+              the desired one.
+
+            ---
+
+            ### 3. Detail per issue
+
+            For every issue in the table, write a section with this exact format:
+
+            #### 🔴 Issue #1 — [Descriptive title]
+
+            **Archivo:** `ruta/al/archivo.ts` — línea 42
+            **Categoría:** Border Case / Performance / Seguridad / Calidad
+
+            **Problema:**
+            Explain in 2-4 sentences what's wrong, why it's a problem and the potential impact on
+            production or other modules.
+            For border cases: state exactly which input reproduces the issue.
+            For performance: estimate the impact (e.g. "with 1000 products this makes 1000 API calls").
+            For security: describe the concrete attack vector.
+
+            **Código actual:**
+            ```typescript
+            // paste the exact problematic fragment
+            ```
+
+            **Corrección sugerida:**
+            ```typescript
+            // paste how it should look
+            ```
+
+            **Por qué:** explain in one sentence the principle or convention being violated.
+
+            ---
+
+            ### 4. Positive aspects
+
+            End with a brief section (3-5 points) highlighting what's well done in the PR. Be specific:
+            mention concrete files or patterns, not generic phrases.
+
+            ---
+
+            ## Judgment and scoring rules
+
+            1. **Quality Score system:** every PR starts with a base score. Subtract points per issue:
+               - 🔴 **Crítico**: -50 points.
+               - 🟡 **Advertencia**: -10 points.
+               - 🔵 **Sugerencia**: -5 points.
+               - ⚪ **Opinión / Nitpick**: 0 points (over-engineering suggestions, micro-optimizations, or
+                 personal AI preferences. Do NOT subtract points).
+            2. **Size tolerance (safe buckets):** adjust the initial base score by approximate file count
+               (the LLM classifies better than it counts):
+               - Small PR (1-10 files): base **100**.
+               - Medium PR (11-25 files): base **110**.
+               - Large PR (26-50 files): base **120**.
+               - Massive PR (> 50 files): base **130**.
+               *(⚠️ **Scaffolding immunity:** files auto-generated by `ng generate` (component/service/
+               pipe/module skeletons) or initial boilerplate are immune. COMPLETELY IGNORE unused code
+               (YAGNI) or cleanup warnings in these structural files. Only strictly audit new business
+               logic.)*
+               *(Note: the final published score never exceeds 100. A single 🔴 Critical error cancels any
+               bonus.)*
+            3. **Approval criterion:** a PR is `approved: true` only if the final calculated score is
+               **>= 80**.
+            3. **Severity in shared code:** in `src/services`, `src/models`, `src/pipes` or `src/utils`
+               (code reused across pages/components), missing tests or ambiguous **Naming** are always
+               **🔴 Critical**.
+            4. **Pragmatism vs. noise:** don't subtract for style (Prettier fixes that), but subtract
+               firmly if the code is confusing, useless or violates YAGNI.
+
+            ---
+
+            ## Format rules
+
+            - Always use fenced code blocks with the language specified (` ```typescript `, ` ```scss `,
+              etc.)
+            - If an issue has no exact line, indicate the affected function or block name
+            - Don't use phrases like "podrías considerar" for critical issues — be direct
+            - For optional suggestions you may use a softer tone
+            - If there are no issues, still include the (empty) table and the positive aspects section
+
+            ---
+
+            ## Publishing the comment (sticky) and the verdict
+
+            1. Compute the final score and verdict as described above.
+            2. Build the full comment body described in sections 1-4 above, **in Spanish**, and save it
+               to a local file, e.g. `review-comment.md` (use the `write_file` tool). Prepend the file
+               with this exact HTML marker on its own line, before the scorecard, so future runs can find
+               it: `<!-- gemini-code-review-bot -->`
+            3. Look for an existing bot comment on this PR:
+               `gh api repos/${{ github.repository }}/issues/${{ steps.resolve-pr.outputs.number }}/comments --jq '.[] | select(.body | contains("<!-- gemini-code-review-bot -->")) | .id'`
+               - If an id is found, update it in place (sticky comment):
+                 `gh api repos/${{ github.repository }}/issues/comments/<id> -X PATCH -F body=@review-comment.md`
+               - Otherwise create a new one:
+                 `gh pr comment ${{ steps.resolve-pr.outputs.number }} --body-file review-comment.md`
+            4. Publish the verdict as a PR review:
+               - If score >= 80:
+                 `gh pr review ${{ steps.resolve-pr.outputs.number }} --approve --body "✅ **Aprobado automáticamente por Gemini** — Puntaje: <score>/100. <resumen de 1-2 oraciones>"`
+               - If score < 80:
+                 `gh pr review ${{ steps.resolve-pr.outputs.number }} --request-changes --body "⚠️ **Gemini detectó <N> issue(s) crítico(s)** — Puntaje: <score>/100. <resumen de 1-2 oraciones>. Consulta el comentario de revisión para más detalles."`
+
+            Do these two publishing steps (comment + review) always, even if there are zero issues.
+
+      # ── Costo real de esta corrida ──────────────────────────────────────────
+      # La action de google-github-actions/run-gemini-cli SIEMPRE corre la CLI con
+      # --output-format json y deja la respuesta completa (incluye .stats.models
+      # con el conteo real de tokens) en gemini-artifacts/stdout.log, aunque
+      # upload_artifacts esté en false. No es una estimación: es el uso real que
+      # reportó la API en esta transacción puntual.
+      - name: Calcular costo real de la transacción
+        if: always() && steps.gemini.outcome != 'skipped'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRICE_INPUT: ${{ needs.resolve-model.outputs.price_input }}
+          PRICE_OUTPUT: ${{ needs.resolve-model.outputs.price_output }}
+          PRICE_CACHE: ${{ needs.resolve-model.outputs.price_cache }}
+          MODEL: ${{ needs.resolve-model.outputs.model }}
+        run: |
+          set -euo pipefail
+          STDOUT_LOG="gemini-artifacts/stdout.log"
+
+          if [[ ! -s "$STDOUT_LOG" ]] || ! jq -e '.stats.models' "$STDOUT_LOG" >/dev/null 2>&1; then
+            echo "::warning::No se encontró .stats.models en $STDOUT_LOG — no se puede calcular el costo real de esta corrida."
+            exit 0
+          fi
+
+          # Suma los tokens de todos los modelos que aparezcan en stats (normalmente uno solo).
+          mapfile -t TOK < <(jq -r '[.stats.models[].tokens] |
+              ( [.[].prompt     // 0] | add // 0 ),
+              ( [.[].candidates // 0] | add // 0 ),
+              ( [.[].thoughts   // 0] | add // 0 ),
+              ( [.[].tool       // 0] | add // 0 ),
+              ( [.[].cached     // 0] | add // 0 )' "$STDOUT_LOG")
+          PROMPT_TOK=${TOK[0]:-0}
+          CANDIDATE_TOK=${TOK[1]:-0}
+          THOUGHT_TOK=${TOK[2]:-0}
+          TOOL_TOK=${TOK[3]:-0}
+          CACHED_TOK=${TOK[4]:-0}
+
+          # Precio de output aplica a candidates + thoughts + tool (así lo billea Google).
+          # Los tokens cacheados salen del bucket "prompt" a precio de cache, no de input.
+          BILLABLE_INPUT_TOK=$(( PROMPT_TOK - CACHED_TOK ))
+          if (( BILLABLE_INPUT_TOK < 0 )); then BILLABLE_INPUT_TOK=0; fi
+          OUTPUT_TOK=$(( CANDIDATE_TOK + THOUGHT_TOK + TOOL_TOK ))
+
+          COST=$(awk -v bi="$BILLABLE_INPUT_TOK" -v ct="$CACHED_TOK" -v ot="$OUTPUT_TOK" \
+                     -v pi="$PRICE_INPUT" -v pc="$PRICE_CACHE" -v po="$PRICE_OUTPUT" \
+                     'BEGIN { printf "%.4f", (bi*pi + ct*pc + ot*po) / 1000000 }')
+
+          BODY_FILE="cost-comment.md"
+          {
+            echo "<!-- gemini-cost-report -->"
+            echo "💰 **Costo real de esta transacción Gemini** (\`$MODEL\`): **\$$COST USD**"
+            echo
+            echo "| Tokens input (sin cache) | Tokens desde cache | Tokens output (respuesta + thinking + tools) |"
+            echo "|---|---|---|"
+            echo "| $BILLABLE_INPUT_TOK | $CACHED_TOK | $OUTPUT_TOK |"
+            echo
+            echo "_Calculado con precios oficiales por millón de tokens vigentes al momento de este PR —"
+            echo "verificar en [ai.google.dev/gemini-api/docs/pricing](https://ai.google.dev/gemini-api/docs/pricing) si cambiaron._"
+          } > "$BODY_FILE"
+
+          EXISTING_ID=$(gh api "repos/${{ github.repository }}/issues/${{ steps.resolve-pr.outputs.number }}/comments" \
+            --jq '.[] | select(.body | contains("<!-- gemini-cost-report -->")) | .id' | head -n1)
+
+          if [[ -n "$EXISTING_ID" ]]; then
+            gh api "repos/${{ github.repository }}/issues/comments/$EXISTING_ID" -X PATCH -F body=@"$BODY_FILE"
+          else
+            gh pr comment ${{ steps.resolve-pr.outputs.number }} --body-file "$BODY_FILE"
+          fi

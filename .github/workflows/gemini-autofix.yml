@@ -1,0 +1,190 @@
+name: Gemini Autofix
+
+on:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: gemini-autofix-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  autofix:
+    runs-on: ubuntu-latest
+    if: github.event.label.name == 'gemini:autofix'
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Crear rama autofix
+        id: branch
+        run: |
+          AUTOFIX_BRANCH="gemini-autofix/${{ github.event.pull_request.head.ref }}"
+          # Crear la nueva rama desde la punta del PR original — nunca tocar la rama original
+          git checkout -b "$AUTOFIX_BRANCH"
+          git push origin "$AUTOFIX_BRANCH"
+          echo "name=$AUTOFIX_BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Apply fixes from review
+        id: gemini
+        uses: google-github-actions/run-gemini-cli@v0
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          gemini_model: gemini-2.5-flash
+          github_pr_number: ${{ github.event.pull_request.number }}
+          workflow_name: gemini-autofix
+          settings: |
+            {
+              "model": {
+                "maxSessionTurns": 40
+              },
+              "tools": {
+                "core": [
+                  "read_file",
+                  "write_file",
+                  "replace",
+                  "glob",
+                  "search_file_content",
+                  "run_shell_command(gh)",
+                  "run_shell_command(git add)",
+                  "run_shell_command(git commit)",
+                  "run_shell_command(git push)",
+                  "run_shell_command(git diff)",
+                  "run_shell_command(git status)"
+                ]
+              }
+            }
+
+          prompt: |
+            Your task is to read the review of PR #${{ github.event.pull_request.number }} and apply
+            the corrections. Everything you write and every commit message must be in Spanish, matching
+            the repo's convention.
+
+            ⚠️ **IMPORTANT:** you are already positioned on branch `${{ steps.branch.outputs.name }}`.
+            **NEVER** commit or push to branch `${{ github.event.pull_request.head.ref }}`.
+            All changes must land only on `${{ steps.branch.outputs.name }}`.
+
+            ## Step 1 — Read the review
+
+            Run the following commands to get the feedback:
+
+            ```
+            gh pr view ${{ github.event.pull_request.number }} --comments
+            gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews
+            gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments
+            ```
+
+            Look for the comment published by the review bot (contains the marker
+            `<!-- gemini-code-review-bot -->` or the issues table with 🔴, 🟡, 🔵).
+
+            ## Step 2 — Apply corrections
+
+            For every issue marked as 🔴 Crítico or 🟡 Advertencia in the review:
+
+            1. Locate the exact file and line mentioned
+            2. Read the full file before editing it
+            3. Apply the fix suggested in the review
+            4. Verify the change doesn't break other usages of the same symbol in the repo using
+               `search_file_content`
+
+            **Do not modify** issues marked as 🔵 Sugerencia — those are optional and left to the
+            author's discretion.
+
+            ## Step 3 — Commit, push and PR
+
+            Once all fixes are applied:
+
+            1. Commit and push **only on branch `${{ steps.branch.outputs.name }}`**:
+               ```
+               git add <modified files>
+               git commit -m "fix: apply gemini review corrections [autofix]"
+               git push origin ${{ steps.branch.outputs.name }}
+               ```
+               ⚠️ Do not run `git checkout`, `git push` or any command affecting
+               `${{ github.event.pull_request.head.ref }}`.
+
+            2. Create a PR whose base branch is the original branch of the reviewed PR
+               (`${{ github.event.pull_request.head.ref }}`):
+               ```
+               gh pr create \
+                 --title "fix: gemini autofix corrections for PR #${{ github.event.pull_request.number }}" \
+                 --base "${{ github.event.pull_request.head.ref }}" \
+                 --head "${{ steps.branch.outputs.name }}" \
+                 --body "<PR body>"
+               ```
+
+               The PR body must follow this format:
+
+               ---
+               🤖 **Gemini Autofix — corrections for PR #${{ github.event.pull_request.number }}**
+
+               Este PR aplica automáticamente los issues 🔴 y 🟡 detectados en el review.
+
+               ## Correcciones aplicadas
+
+               | # | Archivo | Línea | Issue corregido |
+               |---|---------|-------|-----------------|
+               | 1 | `src/foo.ts` | 42 | Descripción del fix |
+
+               ## Issues opcionales no aplicados (🔵)
+               - Lista de sugerencias pendientes para el autor
+
+               > Revisá los cambios antes de hacer merge hacia `${{ github.event.pull_request.head.ref }}`.
+               ---
+
+      # ── Costo real de esta corrida ──────────────────────────────────────────
+      # gemini-2.5-flash: $0.30 / $2.50 / $0.03 (input / output / cache) por millón
+      # de tokens — https://ai.google.dev/gemini-api/docs/pricing (verificar vigencia).
+      # La action siempre deja la respuesta JSON completa (con .stats.models) en
+      # gemini-artifacts/stdout.log, incluso con upload_artifacts en false.
+      - name: Calcular costo real de la transacción
+        if: always() && steps.gemini.outcome != 'skipped'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRICE_INPUT: '0.30'
+          PRICE_OUTPUT: '2.50'
+          PRICE_CACHE: '0.03'
+          MODEL: gemini-2.5-flash
+        run: |
+          set -euo pipefail
+          STDOUT_LOG="gemini-artifacts/stdout.log"
+
+          if [[ ! -s "$STDOUT_LOG" ]] || ! jq -e '.stats.models' "$STDOUT_LOG" >/dev/null 2>&1; then
+            echo "::warning::No se encontró .stats.models en $STDOUT_LOG — no se puede calcular el costo real de esta corrida."
+            exit 0
+          fi
+
+          mapfile -t TOK < <(jq -r '[.stats.models[].tokens] |
+              ( [.[].prompt     // 0] | add // 0 ),
+              ( [.[].candidates // 0] | add // 0 ),
+              ( [.[].thoughts   // 0] | add // 0 ),
+              ( [.[].tool       // 0] | add // 0 ),
+              ( [.[].cached     // 0] | add // 0 )' "$STDOUT_LOG")
+          PROMPT_TOK=${TOK[0]:-0}
+          CANDIDATE_TOK=${TOK[1]:-0}
+          THOUGHT_TOK=${TOK[2]:-0}
+          TOOL_TOK=${TOK[3]:-0}
+          CACHED_TOK=${TOK[4]:-0}
+
+          BILLABLE_INPUT_TOK=$(( PROMPT_TOK - CACHED_TOK ))
+          if (( BILLABLE_INPUT_TOK < 0 )); then BILLABLE_INPUT_TOK=0; fi
+          OUTPUT_TOK=$(( CANDIDATE_TOK + THOUGHT_TOK + TOOL_TOK ))
+
+          COST=$(awk -v bi="$BILLABLE_INPUT_TOK" -v ct="$CACHED_TOK" -v ot="$OUTPUT_TOK" \
+                     -v pi="$PRICE_INPUT" -v pc="$PRICE_CACHE" -v po="$PRICE_OUTPUT" \
+                     'BEGIN { printf "%.4f", (bi*pi + ct*pc + ot*po) / 1000000 }')
+
+          BODY="💰 **Costo real de este autofix Gemini** (\`$MODEL\`): **\$$COST USD** — input: ${BILLABLE_INPUT_TOK} tok, cache: ${CACHED_TOK} tok, output: ${OUTPUT_TOK} tok."
+          gh pr comment ${{ github.event.pull_request.number }} --body "$BODY"
