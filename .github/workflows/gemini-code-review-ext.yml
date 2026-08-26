@@ -85,6 +85,32 @@ jobs:
             }
           prompt: '/pr-code-review'
 
+      # ── Veredicto (aprobar / pedir cambios) ─────────────────────────────────
+      # La extension oficial NUNCA aprueba ni rechaza (su prompt lo prohibe
+      # explicitamente, siempre usa evento COMMENT). Decidimos el veredicto
+      # nosotros, aparte, contando los comentarios inline que ya posteo por
+      # severidad (su propia escala: 🔴 Critical, 🟠 High, 🟡 Medium, 🟢 Low).
+      # Esto no depende del modelo - es determinístico, no se puede colgar ni
+      # se puede manipular via prompt injection en el diff.
+      - name: Decidir aprobar o pedir cambios segun severidad
+        if: always() && steps.gemini.outcome != 'skipped'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PR=${{ github.event.pull_request.number }}
+
+          COMMENTS_JSON=$(gh api "repos/${{ github.repository }}/pulls/$PR/comments" --paginate)
+
+          CRITICAL_COUNT=$(echo "$COMMENTS_JSON" | jq '[.[] | select(.body | startswith("🔴"))] | length')
+          HIGH_COUNT=$(echo "$COMMENTS_JSON" | jq '[.[] | select(.body | startswith("🟠"))] | length')
+
+          if [[ "$CRITICAL_COUNT" -gt 0 ]]; then
+            gh pr review "$PR" --request-changes --body "⚠️ **Gemini (extension) detectó $CRITICAL_COUNT issue(s) 🔴 crítico(s)** y $HIGH_COUNT de severidad 🟠 alta. Revisá los comentarios inline antes de mergear."
+          else
+            gh pr review "$PR" --approve --body "✅ **Aprobado automáticamente por Gemini (extension)** — sin issues 🔴 críticos. ($HIGH_COUNT de severidad 🟠 alta a considerar, si los hay.)"
+          fi
+
       # ── Costo real de esta corrida ──────────────────────────────────────────
       - name: Calcular costo real de la transacción
         if: always() && steps.gemini.outcome != 'skipped'
