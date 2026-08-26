@@ -31,6 +31,13 @@ jobs:
       - name: Pick model by label
         id: pick
         run: |
+          # Confirmado via GET /v1beta/models?key=... contra la key real (26-ago-2026):
+          # gemini-2.5-pro y gemini-2.5-flash estan en el catalogo de esta key.
+          # gemini-2.5-flash-lite TAMBIEN aparece listado ahi, pero una corrida real
+          # de CI (PR #17) probo que Google lo bloquea igual para keys nuevas con
+          # ModelNotFoundError -> "use models/gemini-3.5-flash-lite" - listado no
+          # implica invocable, asi que para el tier simple confiamos en lo que el
+          # propio error de Google indico, no en el catalogo.
           case "${{ github.event.label.name }}" in
             gemini:complex)
               echo "model=gemini-2.5-pro"        >> $GITHUB_OUTPUT
@@ -47,11 +54,11 @@ jobs:
               echo "price_cache=0.03"             >> $GITHUB_OUTPUT
               ;;
             gemini:simple)
-              echo "model=gemini-2.5-flash-lite"  >> $GITHUB_OUTPUT
+              echo "model=gemini-3.5-flash-lite"  >> $GITHUB_OUTPUT
               echo "max_turns=15"                 >> $GITHUB_OUTPUT
-              echo "price_input=0.10"             >> $GITHUB_OUTPUT
-              echo "price_output=0.40"            >> $GITHUB_OUTPUT
-              echo "price_cache=0.01"             >> $GITHUB_OUTPUT
+              echo "price_input=0.30"             >> $GITHUB_OUTPUT
+              echo "price_output=2.50"            >> $GITHUB_OUTPUT
+              echo "price_cache=0.03"             >> $GITHUB_OUTPUT
               ;;
           esac
 
