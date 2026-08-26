@@ -11,6 +11,7 @@ concurrency:
 jobs:
   autofix:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: github.event.label.name == 'gemini:autofix'
     # id-token/actions no se usan (auth es API key, no OIDC/WIF; no tocamos Actions)
     permissions:
