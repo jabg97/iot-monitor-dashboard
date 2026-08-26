@@ -15,7 +15,7 @@ export class AzureService {
 
   constructor(private http: HttpClient) {}
 
-
+  /** Reads the Auth0 user cached by the app in localStorage under `iot-auth0-user`. */
   private getUser(): User | null {
     const ls = localStorage.getItem('iot-auth0-user');
     if(ls){
