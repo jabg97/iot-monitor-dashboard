@@ -47,11 +47,11 @@ jobs:
               echo "price_cache=0.03"             >> $GITHUB_OUTPUT
               ;;
             gemini:simple)
-              echo "model=gemini-2.5-flash-lite"  >> $GITHUB_OUTPUT
+              echo "model=gemini-3.5-flash-lite"  >> $GITHUB_OUTPUT
               echo "max_turns=15"                 >> $GITHUB_OUTPUT
-              echo "price_input=0.10"             >> $GITHUB_OUTPUT
-              echo "price_output=0.40"            >> $GITHUB_OUTPUT
-              echo "price_cache=0.01"             >> $GITHUB_OUTPUT
+              echo "price_input=0.30"             >> $GITHUB_OUTPUT
+              echo "price_output=2.50"            >> $GITHUB_OUTPUT
+              echo "price_cache=0.03"             >> $GITHUB_OUTPUT
               ;;
           esac
 
