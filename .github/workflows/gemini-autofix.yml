@@ -11,6 +11,7 @@ concurrency:
 jobs:
   autofix:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: github.event.label.name == 'gemini:autofix'
     # id-token/actions no se usan (auth es API key, no OIDC/WIF; no tocamos Actions)
     permissions:
@@ -153,10 +154,7 @@ jobs:
         if: always() && steps.gemini.outcome != 'skipped'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PRICE_INPUT: '0.30'
-          PRICE_OUTPUT: '2.50'
-          PRICE_CACHE: '0.03'
-          MODEL: gemini-2.5-flash
+          REQUESTED_MODEL: gemini-2.5-flash
         run: |
           set -euo pipefail
           STDOUT_LOG="gemini-artifacts/stdout.log"
@@ -165,6 +163,29 @@ jobs:
             echo "::warning::No se encontró .stats.models en $STDOUT_LOG — no se puede calcular el costo real de esta corrida."
             exit 0
           fi
+
+          # Google puede alias-ear el modelo pedido a otro en runtime (confirmado:
+          # pedir gemini-2.5-flash a veces ejecuta gemini-3.5-flash, 5x mas caro, sin
+          # avisar). Usamos el modelo que REALMENTE corrio segun stats.models.
+          MODEL=$(jq -r '.stats.models | keys[0] // empty' "$STDOUT_LOG")
+          if [[ -z "$MODEL" ]]; then MODEL="$REQUESTED_MODEL"; fi
+          if [[ "$MODEL" != "$REQUESTED_MODEL" ]]; then
+            echo "::warning::Se pidio '$REQUESTED_MODEL' pero corrio '$MODEL' - Google lo alias-eo en runtime."
+          fi
+
+          # Precios oficiales por millon de tokens (USD, tier <=200k) -
+          # https://ai.google.dev/gemini-api/docs/pricing, verificado 26-ago-2026.
+          case "$MODEL" in
+            gemini-2.5-pro)         PRICE_INPUT=1.25; PRICE_OUTPUT=10.00; PRICE_CACHE=0.125 ;;
+            gemini-2.5-flash)       PRICE_INPUT=0.30;  PRICE_OUTPUT=2.50;  PRICE_CACHE=0.03  ;;
+            gemini-2.5-flash-lite)  PRICE_INPUT=0.10;  PRICE_OUTPUT=0.40;  PRICE_CACHE=0.01  ;;
+            gemini-3.5-flash)       PRICE_INPUT=1.50;  PRICE_OUTPUT=9.00;  PRICE_CACHE=0.15  ;;
+            gemini-3.5-flash-lite)  PRICE_INPUT=0.30;  PRICE_OUTPUT=2.50;  PRICE_CACHE=0.03  ;;
+            *)
+              echo "::warning::Modelo '$MODEL' no esta en la tabla de precios local - usando el precio de gemini-2.5-flash como aproximacion."
+              PRICE_INPUT=0.30; PRICE_OUTPUT=2.50; PRICE_CACHE=0.03
+              ;;
+          esac
 
           mapfile -t TOK < <(jq -r '[.stats.models[].tokens] |
               ( [.[].prompt     // 0] | add // 0 ),
@@ -186,5 +207,10 @@ jobs:
                      -v pi="$PRICE_INPUT" -v pc="$PRICE_CACHE" -v po="$PRICE_OUTPUT" \
                      'BEGIN { printf "%.4f", (bi*pi + ct*pc + ot*po) / 1000000 }')
 
-          BODY="💰 **Costo real de este autofix Gemini** (\`$MODEL\`): **\$$COST USD** — input: ${BILLABLE_INPUT_TOK} tok, cache: ${CACHED_TOK} tok, output: ${OUTPUT_TOK} tok."
+          MODEL_LABEL="\`$MODEL\`"
+          if [[ "$MODEL" != "$REQUESTED_MODEL" ]]; then
+            MODEL_LABEL="\`$MODEL\` ⚠️ (se pidió \`$REQUESTED_MODEL\`, Google lo alias-eó en runtime)"
+          fi
+
+          BODY="💰 **Costo real de este autofix Gemini** ($MODEL_LABEL): **\$$COST USD** — input: ${BILLABLE_INPUT_TOK} tok, cache: ${CACHED_TOK} tok, output: ${OUTPUT_TOK} tok."
           gh pr comment ${{ github.event.pull_request.number }} --body "$BODY"
