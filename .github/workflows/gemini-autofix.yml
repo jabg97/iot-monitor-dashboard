@@ -12,7 +12,7 @@ jobs:
   gemini-autofix:
     name: AI Autofix
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     if: github.event.label.name == 'gemini:autofix'
 
@@ -22,26 +22,18 @@ jobs:
       issues: write
 
     steps:
-      - name: Checkout base
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref }}
 
-      - name: Resolver contexto del PR
-        id: ctx
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Crear rama autofix
+        id: branch
         run: |
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          MODEL="gemini-2.5-flash"
-
-          PR_HEAD_REF=$(gh pr view "$PR_NUMBER" --json headRefName --jq '.headRefName')
-
-          echo "pr_number=$PR_NUMBER"     >> "$GITHUB_OUTPUT"
-          echo "model=$MODEL"             >> "$GITHUB_OUTPUT"
-          echo "pr_head_ref=$PR_HEAD_REF" >> "$GITHUB_OUTPUT"
-
-          gh pr checkout "$PR_NUMBER"
+          AUTOFIX_BRANCH="gemini-autofix/${{ github.event.pull_request.head.ref }}"
+          git checkout -b "$AUTOFIX_BRANCH"
+          git push origin "$AUTOFIX_BRANCH"
+          echo "name=$AUTOFIX_BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Configurar Python
         uses: actions/setup-python@v5
@@ -52,37 +44,36 @@ jobs:
         run: |
           pip install --quiet google-genai requests
 
-      - name: Ejecutar revisión con Gemini
-        id: review
+      - name: Aplicar correcciones con Gemini
+        id: autofix
         env:
           GEMINI_API_KEY:    ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_EVENT_NAME: ${{ github.event_name }}
-          GITHUB_EVENT_PATH: ${{ github.event_path }}
-          GEMINI_MODEL:      ${{ steps.ctx.outputs.model }}
-          PR_NUMBER:         ${{ steps.ctx.outputs.pr_number }}
+          GEMINI_MODEL:      gemini-2.5-flash
+          PR_NUMBER:         ${{ github.event.pull_request.number }}
+          PR_HEAD_REF:       ${{ github.event.pull_request.head.ref }}
         run: |
-          python .github/scripts/gemini_review.py
+          python .github/scripts/gemini_autofix.py
 
-      - name: Crear PR con las correcciones automáticas
-        if: steps.review.outputs.verdict == 'CORREGIDO'
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "fix: correcciones automáticas de Gemini ${{ steps.ctx.outputs.model }}"
-          title: "fix: correcciones automáticas de Gemini para PR #${{ steps.ctx.outputs.pr_number }}"
-          body: |
-            Gemini **${{ steps.ctx.outputs.model }}** revisó el código del PR #${{ steps.ctx.outputs.pr_number }} y generó estas correcciones automáticas.
-
-            > Revisa los cambios antes de fusionar esta rama.
-          branch: "gemini-fixes-${{ steps.ctx.outputs.pr_number }}"
-          base: ${{ steps.ctx.outputs.pr_head_ref }}
-          labels: "ai-fixes"
-
-      - name: Aviso si no hubo nada que corregir
-        if: steps.review.outputs.verdict != 'CORREGIDO'
+      - name: Commitear, pushear y crear PR
+        if: steps.autofix.outputs.has_fixes == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr comment ${{ steps.ctx.outputs.pr_number }} --body "ℹ️ **Gemini Autofix**: el veredicto fue \`${{ steps.review.outputs.verdict }}\`, no \`CORREGIDO\` — no hay un fix automático para aplicar en este PR."
+          git add -u
+          git commit -m "fix: apply gemini review corrections [autofix]"
+          git push origin "${{ steps.branch.outputs.name }}"
+          gh pr create \
+            --title "fix: gemini autofix corrections for PR #${{ github.event.pull_request.number }}" \
+            --base "${{ github.event.pull_request.head.ref }}" \
+            --head "${{ steps.branch.outputs.name }}" \
+            --body-file autofix-pr-body.md \
+            --label "ai-fixes"
+
+      - name: Avisar si no hubo nada que corregir
+        if: steps.autofix.outputs.has_fixes != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body "ℹ️ **Gemini Autofix**: no encontré un review previo con issues 🔴/🟡 aplicables — no hay fix automático para este PR."
