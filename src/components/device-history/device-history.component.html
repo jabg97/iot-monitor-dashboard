@@ -13,7 +13,7 @@
       <td>{{ entry.dateTime | date : 'short' : '+0000' }}</td>
       <td class="device-history__states">
         <small
-          *ngFor="let state of splitState(entry.state)"
+          *ngFor="let state of entry.state | splitState"
           [class.error-text]="isOutOfRange(state)">
           {{ state }}
         </small>
