@@ -1,9 +1,5 @@
 name: Gemini Autofix
 
-# Mismo script que gemini-code-review.yml (.github/scripts/gemini_review.py) -
-# vuelve a revisar el PR y, si el veredicto es CORREGIDO, escribe los archivos
-# corregidos y abre un PR aparte con el fix. Label separada para pedirlo a
-# propósito, en vez de que pase automático dentro de cada review.
 on:
   pull_request:
     types: [labeled]
