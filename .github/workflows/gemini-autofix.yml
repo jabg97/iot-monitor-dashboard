@@ -71,7 +71,7 @@ jobs:
             --base "${{ github.event.pull_request.head.ref }}" \
             --head "${{ steps.branch.outputs.name }}" \
             --body-file autofix-pr-body.md \
-            --label "ai-fixes"
+            --label "gemini:fixes"
 
       - name: Avisar si no hubo nada que corregir
         if: steps.autofix.outputs.has_fixes != 'true'
