@@ -27,25 +27,50 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.ref }}
 
-      - name: Crear rama autofix
+      - name: Verificar rama/PR de autofix existente
         id: branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           AUTOFIX_BRANCH="gemini-autofix/${{ github.event.pull_request.head.ref }}"
-          git checkout -b "$AUTOFIX_BRANCH"
-          git push --force origin "$AUTOFIX_BRANCH"
           echo "name=$AUTOFIX_BRANCH" >> "$GITHUB_OUTPUT"
 
+          EXISTING_PR_URL=$(gh pr list --head "$AUTOFIX_BRANCH" --base "${{ github.event.pull_request.head.ref }}" --json url --jq '.[0].url')
+
+          if [[ -n "$EXISTING_PR_URL" ]]; then
+            echo "already_exists=true" >> "$GITHUB_OUTPUT"
+            echo "existing_pr_url=$EXISTING_PR_URL" >> "$GITHUB_OUTPUT"
+          else
+            echo "already_exists=false" >> "$GITHUB_OUTPUT"
+            # Si la rama quedo huerfana de una corrida anterior sin PR asociado
+            # (ya confirmamos arriba que no hay PR abierto para ella), la borramos
+            # antes de recrearla - si no, el push de abajo rebota (non-fast-forward).
+            git push origin --delete "$AUTOFIX_BRANCH" 2>/dev/null || true
+            git checkout -b "$AUTOFIX_BRANCH"
+            git push origin "$AUTOFIX_BRANCH"
+          fi
+
+      - name: Avisar que ya existe un PR de autofix
+        if: steps.branch.outputs.already_exists == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body "ℹ️ **Gemini Autofix**: ya existe un PR de autofix abierto para este PR → ${{ steps.branch.outputs.existing_pr_url }}"
+
       - name: Configurar Python
+        if: steps.branch.outputs.already_exists != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Instalar dependencias
+        if: steps.branch.outputs.already_exists != 'true'
         run: |
           pip install --quiet google-genai requests
 
       - name: Aplicar correcciones con Gemini
         id: autofix
+        if: steps.branch.outputs.already_exists != 'true'
         env:
           GEMINI_API_KEY:    ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
@@ -57,7 +82,7 @@ jobs:
           python .github/scripts/gemini_autofix.py
 
       - name: Commitear, pushear y crear PR
-        if: steps.autofix.outputs.has_fixes == 'true'
+        if: steps.branch.outputs.already_exists != 'true' && steps.autofix.outputs.has_fixes == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -65,22 +90,16 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -u
           git commit -m "fix: apply gemini review corrections [autofix]"
-          git push --force origin "${{ steps.branch.outputs.name }}"
-
-          EXISTING_PR=$(gh pr list --head "${{ steps.branch.outputs.name }}" --base "${{ github.event.pull_request.head.ref }}" --json number --jq '.[0].number')
-          if [[ -n "$EXISTING_PR" ]]; then
-            echo "Ya existe el PR #$EXISTING_PR para esta rama, el force-push ya actualizo su contenido."
-          else
-            gh pr create \
-              --title "fix: gemini autofix corrections for PR #${{ github.event.pull_request.number }}" \
-              --base "${{ github.event.pull_request.head.ref }}" \
-              --head "${{ steps.branch.outputs.name }}" \
-              --body-file autofix-pr-body.md \
-              --label "gemini:fixes"
-          fi
+          git push origin "${{ steps.branch.outputs.name }}"
+          gh pr create \
+            --title "fix: gemini autofix corrections for PR #${{ github.event.pull_request.number }}" \
+            --base "${{ github.event.pull_request.head.ref }}" \
+            --head "${{ steps.branch.outputs.name }}" \
+            --body-file autofix-pr-body.md \
+            --label "gemini:fixes"
 
       - name: Avisar si no hubo nada que corregir
-        if: steps.autofix.outputs.has_fixes != 'true'
+        if: steps.branch.outputs.already_exists != 'true' && steps.autofix.outputs.has_fixes != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
