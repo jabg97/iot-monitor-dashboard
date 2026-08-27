@@ -1,9 +1,5 @@
 name: Gemini Code Review
 
-# Llamada UNICA a la API (google-genai directo), sin CLI agentica ni loop de
-# turnos - por eso es confiable: no hay tools.core, no hay maxSessionTurns,
-# no hay forma de que se quede colgado explorando. Lee el diff, manda UN
-# prompt, parsea el veredicto, postea. Ver .github/scripts/gemini_review.py.
 on:
   pull_request:
     types: [labeled]
@@ -34,7 +30,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Resuelve modelo según label y hace checkout a la rama del PR
       - name: Resolver contexto del PR
         id: ctx
         env:
@@ -42,8 +37,6 @@ jobs:
         run: |
           PR_NUMBER="${{ github.event.pull_request.number }}"
 
-          # gemini-2.5-flash-lite esta bloqueado para keys nuevas (confirmado en
-          # runtime); usamos gemini-3.5-flash-lite como reemplazo para el tier simple.
           case "${{ github.event.label.name }}" in
             gemini:complex)
               MODEL="gemini-2.5-pro"

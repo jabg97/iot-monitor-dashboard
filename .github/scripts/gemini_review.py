@@ -93,13 +93,6 @@ FILE_RE = re.compile(r'<file path="([^"]+)">\s*(.*?)\s*</file>', re.DOTALL)
 
 GITHUB_API = "https://api.github.com"
 
-# Precios oficiales por millon de tokens (USD, tier <=200k) -
-# https://ai.google.dev/gemini-api/docs/pricing, verificado 27-ago-2026.
-# La tabla vieja tenia gemini-2.5-flash mal ($0.075/$0.30 en vez de $0.30/$2.50).
-# Google puede alias-ear el modelo pedido a otro en runtime sin avisar (confirmado:
-# pedir gemini-2.5-flash a veces sirve gemini-3.5-flash, 5x mas caro) - por eso
-# el costo se calcula con response.model_version (el que REALMENTE corrio), no
-# con el nombre que pedimos.
 MODEL_PRICING = {
     "gemini-2.5-pro":         {"input": 1.25, "output": 10.00, "cache": 0.125},
     "gemini-2.5-flash":       {"input": 0.30, "output": 2.50,  "cache": 0.03},
@@ -184,8 +177,6 @@ def get_real_model(response, requested_model: str) -> str:
     version = getattr(response, "model_version", None)
     if not version:
         return requested_model
-    # model_version puede venir con prefijo "models/" o con sufijo de fecha/build -
-    # matcheamos por el nombre base mas largo que aparezca como prefijo.
     version = version.replace("models/", "")
     for known in sorted(MODEL_PRICING, key=len, reverse=True):
         if version == known or version.startswith(known + "-") or version.startswith(known):
@@ -290,7 +281,6 @@ def main() -> None:
 
     raw = response.text
 
-    # Costo real (modelo que REALMENTE corrio, no el que pedimos)
     real_model = get_real_model(response, model_name)
     in_tok, out_tok, cached_tok = get_token_counts(response)
     cost = calculate_cost(real_model, in_tok, out_tok, cached_tok)
