@@ -32,7 +32,7 @@ jobs:
         run: |
           AUTOFIX_BRANCH="gemini-autofix/${{ github.event.pull_request.head.ref }}"
           git checkout -b "$AUTOFIX_BRANCH"
-          git push origin "$AUTOFIX_BRANCH"
+          git push --force origin "$AUTOFIX_BRANCH"
           echo "name=$AUTOFIX_BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Configurar Python
@@ -65,13 +65,19 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -u
           git commit -m "fix: apply gemini review corrections [autofix]"
-          git push origin "${{ steps.branch.outputs.name }}"
-          gh pr create \
-            --title "fix: gemini autofix corrections for PR #${{ github.event.pull_request.number }}" \
-            --base "${{ github.event.pull_request.head.ref }}" \
-            --head "${{ steps.branch.outputs.name }}" \
-            --body-file autofix-pr-body.md \
-            --label "gemini:fixes"
+          git push --force origin "${{ steps.branch.outputs.name }}"
+
+          EXISTING_PR=$(gh pr list --head "${{ steps.branch.outputs.name }}" --base "${{ github.event.pull_request.head.ref }}" --json number --jq '.[0].number')
+          if [[ -n "$EXISTING_PR" ]]; then
+            echo "Ya existe el PR #$EXISTING_PR para esta rama, el force-push ya actualizo su contenido."
+          else
+            gh pr create \
+              --title "fix: gemini autofix corrections for PR #${{ github.event.pull_request.number }}" \
+              --base "${{ github.event.pull_request.head.ref }}" \
+              --head "${{ steps.branch.outputs.name }}" \
+              --body-file autofix-pr-body.md \
+              --label "gemini:fixes"
+          fi
 
       - name: Avisar si no hubo nada que corregir
         if: steps.autofix.outputs.has_fixes != 'true'
