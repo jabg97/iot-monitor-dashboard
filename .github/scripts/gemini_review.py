@@ -93,11 +93,21 @@ FILE_RE = re.compile(r'<file path="([^"]+)">\s*(.*?)\s*</file>', re.DOTALL)
 
 GITHUB_API = "https://api.github.com"
 
-# Precios por millón de tokens (verificar en ai.google.dev/pricing)
+# Precios oficiales por millon de tokens (USD, tier <=200k) -
+# https://ai.google.dev/gemini-api/docs/pricing, verificado 27-ago-2026.
+# La tabla vieja tenia gemini-2.5-flash mal ($0.075/$0.30 en vez de $0.30/$2.50).
+# Google puede alias-ear el modelo pedido a otro en runtime sin avisar (confirmado:
+# pedir gemini-2.5-flash a veces sirve gemini-3.5-flash, 5x mas caro) - por eso
+# el costo se calcula con response.model_version (el que REALMENTE corrio), no
+# con el nombre que pedimos.
 MODEL_PRICING = {
-    "gemini-2.5-flash": {"input": 0.075, "output": 0.30},
-    "gemini-2.5-pro":   {"input": 1.25,  "output": 10.00},
+    "gemini-2.5-pro":         {"input": 1.25, "output": 10.00, "cache": 0.125},
+    "gemini-2.5-flash":       {"input": 0.30, "output": 2.50,  "cache": 0.03},
+    "gemini-2.5-flash-lite":  {"input": 0.10, "output": 0.40,  "cache": 0.01},
+    "gemini-3.5-flash":       {"input": 1.50, "output": 9.00,  "cache": 0.15},
+    "gemini-3.5-flash-lite":  {"input": 0.30, "output": 2.50,  "cache": 0.03},
 }
+DEFAULT_PRICING = {"input": 0.30, "output": 2.50, "cache": 0.03}  # fallback: precio de gemini-2.5-flash
 
 # ---------------------------------------------------------------------------
 # Utilidades
@@ -152,15 +162,66 @@ def call_gemini(prompt: str, api_key: str, model_name: str):
 
 
 def get_token_counts(response) -> tuple:
+    """Devuelve (input_tokens, output_tokens, cached_tokens). output_tokens incluye
+    candidates + thinking (Google los billea igual)."""
     meta = getattr(response, "usage_metadata", None)
     if meta is None:
-        return 0, 0
+        return 0, 0, 0
     in_t = int(getattr(meta, "prompt_token_count", 0) or 0)
-    out_t = getattr(meta, "candidates_token_count", None)
-    if out_t is None:
+    cached_t = int(getattr(meta, "cached_content_token_count", 0) or 0)
+    out_t = getattr(meta, "candidates_token_count", None) or 0
+    thoughts_t = getattr(meta, "thoughts_token_count", None) or 0
+    out_t = int(out_t) + int(thoughts_t)
+    if out_t == 0:
         total = int(getattr(meta, "total_token_count", 0) or 0)
         out_t = max(0, total - in_t)
-    return in_t, int(out_t)
+    return in_t, out_t, cached_t
+
+
+def get_real_model(response, requested_model: str) -> str:
+    """El modelo que REALMENTE corrio segun la API, no el que pedimos - Google
+    puede alias-ear en runtime (confirmado con gemini-2.5-flash -> gemini-3.5-flash)."""
+    version = getattr(response, "model_version", None)
+    if not version:
+        return requested_model
+    # model_version puede venir con prefijo "models/" o con sufijo de fecha/build -
+    # matcheamos por el nombre base mas largo que aparezca como prefijo.
+    version = version.replace("models/", "")
+    for known in sorted(MODEL_PRICING, key=len, reverse=True):
+        if version == known or version.startswith(known + "-") or version.startswith(known):
+            return known
+    return version
+
+
+def calculate_cost(model: str, input_tok: int, output_tok: int, cached_tok: int) -> float:
+    pricing = MODEL_PRICING.get(model, DEFAULT_PRICING)
+    billable_input = max(0, input_tok - cached_tok)
+    return (
+        billable_input * pricing["input"]
+        + cached_tok * pricing["cache"]
+        + output_tok * pricing["output"]
+    ) / 1_000_000
+
+
+def post_cost_comment(repo: str, pr_number: int, token: str, requested_model: str,
+                       real_model: str, input_tok: int, output_tok: int,
+                       cached_tok: int, cost: float) -> None:
+    model_label = f"`{real_model}`"
+    if real_model != requested_model:
+        model_label = f"`{real_model}` ⚠️ (se pidió `{requested_model}`, Google lo alias-eó en runtime)"
+    body = (
+        "<!-- gemini-cost-report -->\n"
+        f"💰 **Costo real de esta transacción Gemini** ({model_label}): **${cost:.4f} USD**\n\n"
+        "| Tokens input (sin cache) | Tokens desde cache | Tokens output (respuesta + thinking) |\n"
+        "|---|---|---|\n"
+        f"| {max(0, input_tok - cached_tok)} | {cached_tok} | {output_tok} |\n\n"
+        "_Calculado con precios oficiales por millón de tokens vigentes al momento de este PR — "
+        "verificar en [ai.google.dev/gemini-api/docs/pricing](https://ai.google.dev/gemini-api/docs/pricing) "
+        "si cambiaron._"
+    )
+    url = f"{GITHUB_API}/repos/{repo}/issues/{pr_number}/comments"
+    resp = requests.post(url, headers=github_headers(token), json={"body": body}, timeout=30)
+    resp.raise_for_status()
 
 
 def post_github_comment(repo: str, pr_number: int, token: str, event: str, body: str) -> None:
@@ -229,15 +290,21 @@ def main() -> None:
 
     raw = response.text
 
-    # Costo estimado
-    pricing = MODEL_PRICING.get(model_name, {"input": 0.0, "output": 0.0})
-    in_tok, out_tok = get_token_counts(response)
-    cost = (in_tok * pricing["input"] + out_tok * pricing["output"]) / 1_000_000
+    # Costo real (modelo que REALMENTE corrio, no el que pedimos)
+    real_model = get_real_model(response, model_name)
+    in_tok, out_tok, cached_tok = get_token_counts(response)
+    cost = calculate_cost(real_model, in_tok, out_tok, cached_tok)
+    if real_model != model_name:
+        print(f"[WARN] Se pidio '{model_name}' pero corrio '{real_model}' - Google lo alias-eo en runtime.", file=sys.stderr)
     print(
-        f"[INFO] Tokens — input: {in_tok}, output: {out_tok} | "
-        f"Costo estimado: ${cost:.6f} USD ({model_name})",
+        f"[INFO] Tokens — input: {in_tok} (cache: {cached_tok}), output: {out_tok} | "
+        f"Costo real: ${cost:.6f} USD ({real_model})",
         file=sys.stderr,
     )
+    try:
+        post_cost_comment(repository, pr_num, gh_token, model_name, real_model, in_tok, out_tok, cached_tok, cost)
+    except Exception as exc:
+        print(f"[WARN] No se pudo postear el comentario de costo: {exc}", file=sys.stderr)
 
     # Extraer veredicto
     match = VERDICT_RE.search(raw)
