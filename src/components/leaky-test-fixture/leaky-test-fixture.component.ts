@@ -12,19 +12,26 @@
  * page / a dialog / an item in an `*ngFor`), the interval keeps firing and
  * holding a reference to a dead component forever.
  */
-import { Component, OnInit } from '@angular/core';
-import { interval } from 'rxjs';
+import { Component, OnInit, OnDestroy } from '@angular/core';
+import { interval, Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-leaky-test-fixture',
   template: `<p>{{ tickCount }}</p>`,
 })
-export class LeakyTestFixtureComponent implements OnInit {
+export class LeakyTestFixtureComponent implements OnInit, OnDestroy {
   tickCount = 0;
+  private intervalSubscription: Subscription;
 
   ngOnInit(): void {
-    interval(1000).subscribe(() => {
+    this.intervalSubscription = interval(1000).subscribe(() => {
       this.tickCount++;
     });
+  }
+
+  ngOnDestroy(): void {
+    if (this.intervalSubscription) {
+      this.intervalSubscription.unsubscribe();
+    }
   }
 }
