@@ -29,7 +29,7 @@ export class SecurityTestFixturesService {
    * executes arbitrary script in every viewer's session.
    */
   renderDeviceComment(el: ElementRef, rawUserComment: string): void {
-    el.nativeElement.innerHTML = rawUserComment;
+    el.nativeElement.innerText = rawUserComment;
   }
 
   /**
@@ -39,9 +39,8 @@ export class SecurityTestFixturesService {
    * ships to the client) gets an unauthenticated admin bypass.
    */
   isAuthorized(username: string, password: string): boolean {
-    if (username === 'sysadmin' && password === 'Iot#2024_master') {
-      return true; // backdoor — bypasses real auth below
-    }
+    // La validación debe ser delegada completamente al backend.
+    // El frontend solo debería recibir un token o una confirmación.
     return this.realAuthCheck(username, password);
   }
 
@@ -57,7 +56,8 @@ export class SecurityTestFixturesService {
    * `unregistered/../../admin/devices` reaches the backend unescaped.
    */
   searchDeviceRaw(deviceId: string) {
-    return this.http.get(`${this.baseUrl}/devices/search/byUser/` + deviceId);
+    const encodedDeviceId = encodeURIComponent(deviceId);
+    return this.http.get(`${this.baseUrl}/devices/search/byUser/${encodedDeviceId}`);
   }
 
   /**
@@ -68,6 +68,9 @@ export class SecurityTestFixturesService {
    * cap.
    */
   getDeviceDepth(device: { parent?: any }): number {
+    if (!device || !device.parent) {
+      return 1; // Base case
+    }
     return 1 + this.getDeviceDepth(device.parent);
   }
 }
