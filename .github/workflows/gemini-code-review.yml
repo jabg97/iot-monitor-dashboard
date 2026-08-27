@@ -107,6 +107,10 @@ jobs:
               },
               "tools": {
                 "core": [
+                  "read_file",
+                  "glob",
+                  "search_file_content",
+                  "list_directory",
                   "write_file",
                   "run_shell_command(gh)"
                 ]
@@ -120,7 +124,10 @@ jobs:
             Latin American Spanish** (the format headers/labels below are illustrative — the actual
             comment body you publish must be in Spanish).
 
-            You have shell access to the `gh` CLI only. Useful commands:
+            The repo is already checked out locally, so you can use read_file/glob/
+            search_file_content/list_directory freely to read any file for extra context beyond
+            the diff hunks. Your only shell access is the `gh` CLI (no other commands). Useful `gh`
+            commands:
             - `gh pr diff ${{ steps.resolve-pr.outputs.number }}` — full diff
             - `gh pr view ${{ steps.resolve-pr.outputs.number }} --json files,additions,deletions,changedFiles`
             - `gh api repos/${{ github.repository }}/pulls/${{ steps.resolve-pr.outputs.number }}/files`
